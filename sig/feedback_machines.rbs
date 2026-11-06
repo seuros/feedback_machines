@@ -1,0 +1,11 @@
+module FeedbackMachines
+  VERSION: String
+  class Pid
+    def self.new: (p: Float, min: Float, max: Float, ?i: Float, ?d: Float) -> instance
+    def step: (error: Float, elapsed: Float) -> Float?
+  end
+  class Hysteresis
+    def self.new: (min: Float, max: Float) -> instance
+    def observe: (Float) -> (:low | :high)?
+  end
+end

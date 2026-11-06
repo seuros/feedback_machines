@@ -1,0 +1,11 @@
+[package]
+name = "feedback-machines"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Finite-input PID and hysteresis control primitives"
+readme = "README.md"
+
+[lints]
+workspace = true
