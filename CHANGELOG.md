@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/seuros/feedback_machines/compare/feedback_machines/v0.1.3...feedback_machines/v0.1.4) (2026-11-06)
+
+
+### Bug Fixes
+
+* crates.io keywords and categories for the core ([fa5503e](https://github.com/seuros/feedback_machines/commit/fa5503e226b815de6da68bf3710f3b108c27ce2c))
+
 ## [0.1.3](https://github.com/seuros/feedback_machines/compare/feedback_machines/v0.1.2...feedback_machines/v0.1.3) (2026-11-06)
 
 
