@@ -6,6 +6,6 @@ rust-version.workspace = true
 license.workspace = true
 description = "Finite-input PID and hysteresis control primitives"
 readme = "README.md"
-
+exclude = ["src/**/tests.rs", "tests/"]
 [lints]
 workspace = true
