@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/seuros/feedback_machines/compare/feedback_machines/v0.1.2...feedback_machines/v0.1.3) (2026-11-06)
+
+
+### Bug Fixes
+
+* keep test sources out of the packaged gem and crate ([d507afd](https://github.com/seuros/feedback_machines/commit/d507afd8ea54ec317a9b3dccbeb0cb4e3d455f6f))
+
 ## [0.1.2](https://github.com/seuros/feedback_machines/compare/feedback_machines/v0.1.1...feedback_machines/v0.1.2) (2026-11-06)
 
 
