@@ -1,11 +1,68 @@
 module FeedbackMachines
   VERSION: String
-  class Pid
-    def self.new: (p: Float, min: Float, max: Float, ?i: Float, ?d: Float) -> instance
-    def step: (error: Float, elapsed: Float) -> Float?
+
+  # The core's `Refusal`: the call was not honoured and changed nothing.
+  # :not_finite, the sample is NaN or infinite.
+  # :invalid_duration, the elapsed time is zero.
+  # :overflow, the sample is finite but a term of the calculation is not.
+  type refusal = :not_finite | :invalid_duration | :overflow
+
+  # The core's `Band`.
+  type band = :low | :high
+
+  # The core's `Gains`. `new` mirrors `Gains::new(p, i, d)`: it raises
+  # RangeError unless every gain is finite and nonnegative, TypeError for a
+  # non-number. The fields are stored as Floats.
+  class Gains < Data
+    attr_reader p: Float
+    attr_reader i: Float
+    attr_reader d: Float
+    def self.new: (Numeric p, Numeric i, Numeric d) -> Gains
+                | (p: Numeric, i: Numeric, d: Numeric) -> Gains
   end
+
+  # The core's `Limits`. `new` mirrors `Limits::new(min, max)`: it raises
+  # RangeError unless both are finite and min < max, TypeError for a
+  # non-number. The fields are stored as Floats.
+  class Limits < Data
+    attr_reader min: Float
+    attr_reader max: Float
+    def self.new: (Numeric min, Numeric max) -> Limits
+                | (min: Numeric, max: Numeric) -> Limits
+  end
+
+  # The core's `Pid`.
+  class Pid
+    # The core's `Pid::new(gains, limits)`. Raises TypeError unless given a
+    # Gains and a Limits.
+    def self.new: (Gains gains, Limits limits) -> Pid
+    def gains: () -> Gains
+    def limits: () -> Limits
+
+    # The core's `Pid::step(error, elapsed)`. `elapsed` is the span since the
+    # previous sample in Integer nanoseconds. Honoured: the output, a Float
+    # within the limits. Refused: :not_finite (error is NaN or infinite),
+    # :invalid_duration (elapsed is zero) or :overflow; the controller is
+    # unchanged. Never nil. Raises TypeError for a non-Integer elapsed or a
+    # non-number error, RangeError for an elapsed outside 0..2**64-1,
+    # FrozenError on a frozen controller.
+    def step: (Numeric error, Integer elapsed) -> (Float | refusal)
+  end
+
+  # The core's `Hysteresis`.
   class Hysteresis
-    def self.new: (min: Float, max: Float) -> instance
-    def observe: (Float) -> (:low | :high)?
+    # The core's `Hysteresis::new(limits)`: starts :low. Raises TypeError
+    # unless given a Limits.
+    def self.new: (Limits limits) -> Hysteresis
+    def limits: () -> Limits
+
+    # The side the band is on now. A query.
+    def state: () -> band
+
+    # The core's `Hysteresis::observe(value)`. Honoured: the side the band is
+    # on after the measurement. Refused: :not_finite, and the band keeps its
+    # side. Never nil. Raises TypeError for a non-number, FrozenError on a
+    # frozen band.
+    def observe: (Numeric value) -> (band | :not_finite)
   end
 end
