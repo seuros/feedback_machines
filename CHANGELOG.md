@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0](https://github.com/seuros/feedback_machines/compare/feedback_machines/v0.1.4...feedback_machines/v0.2.0) (2026-11-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* converted to the fleet conventions. One exhaustive Refusal per crate, Result from every operation that can refuse, a refusal changes nothing, provable idempotent repeats are honoured, Ruby mirrors the core. No compatibility aliases. step and observe return Result; Ruby takes Gains and Limits values.
+
+### Features
+
+* refuse bad samples with Refusal and take elapsed as Integer nanoseconds in Ruby ([cc23741](https://github.com/seuros/feedback_machines/commit/cc23741e0f1309717910b8752b14e6bbef1dcf13))
+
 ## [0.1.4](https://github.com/seuros/feedback_machines/compare/feedback_machines/v0.1.3...feedback_machines/v0.1.4) (2026-11-06)
 
 
