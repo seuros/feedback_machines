@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/seuros/feedback_machines/compare/feedback_machines/v0.5.0...feedback_machines/v0.5.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **deps:** require matryona-machines &gt;= 0.4 ([3ddc2cc](https://github.com/seuros/feedback_machines/commit/3ddc2cca66cf3c87e3181b7da7aab665221dc43b))
+
 ## [0.5.0](https://github.com/seuros/feedback_machines/compare/feedback_machines/v0.4.0...feedback_machines/v0.5.0) (2026-11-14)
 
 
