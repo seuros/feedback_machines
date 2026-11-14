@@ -196,7 +196,7 @@ A non-finite reading answers `:not_finite` and the band keeps its state.
 - **Gains are finite and nonnegative.** Negative or infinite `p`, `i`, or `d` raises `RangeError` from `Gains.new`. Flip the sign of your error instead.
 - **Limits need `min < max`.** Equal, reversed or non-finite raises `RangeError` from `Limits.new`. Same value type for the band.
 - **`elapsed` is a span in Integer nanoseconds**, not a timestamp and not seconds: subtract two `Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond)` readings. A Float raises `TypeError`, a negative one raises `RangeError`. Zero is refused with `:invalid_duration`.
-- **Errors, gains, limits and outputs are Floats.** They are control quantities, not time. Integers are accepted and treated as floats.
+- **Errors, gains, limits and outputs are Floats.** They are control quantities, not time. Integers are accepted and treated as floats; anything else (a `Rational`, a `BigDecimal`, an object with `to_f`) raises `TypeError`, and no `to_f` runs.
 - **A refusal is a symbol, never an exception, and changes nothing.** Not the integral, not the derivative history, not the band's side.
 - **Nothing to repeat.** Every honoured `step` is a new sample; the controller keeps no record of past calls, so feeding the same sample twice is two samples.
 - **No ids, no clock.** Nothing is issued and nothing reads the time. A controller's state lives in memory; a restart starts from zero.

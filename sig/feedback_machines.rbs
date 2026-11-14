@@ -11,27 +11,28 @@ module FeedbackMachines
   type band = :low | :high
 
   # The core's `Gains`. `new` mirrors `Gains::new(p, i, d)`: it raises
-  # RangeError unless every gain is finite and nonnegative, TypeError for a
-  # non-number. The fields are stored as Floats. Sealed (subclassing raises
-  # TypeError, no `allocate`); the binding reads only instances of exactly
-  # this class and re-checks their fields, so a forged value raises.
+  # RangeError unless every gain is finite and nonnegative, TypeError for
+  # anything but a Float or Integer (a Rational included). The fields are
+  # stored as Floats. Sealed (subclassing raises TypeError, no `allocate`);
+  # the binding reads only instances of exactly this class and re-checks
+  # their fields, so a forged value raises.
   class Gains < Data
     attr_reader p: Float
     attr_reader i: Float
     attr_reader d: Float
-    def self.new: (Numeric p, Numeric i, Numeric d) -> Gains
-                | (p: Numeric, i: Numeric, d: Numeric) -> Gains
+    def self.new: ((Float | Integer) p, (Float | Integer) i, (Float | Integer) d) -> Gains
+                | (p: (Float | Integer), i: (Float | Integer), d: (Float | Integer)) -> Gains
   end
 
   # The core's `Limits`. `new` mirrors `Limits::new(min, max)`: it raises
-  # RangeError unless both are finite and min < max, TypeError for a
-  # non-number. The fields are stored as Floats. Sealed and re-checked by the
-  # binding like Gains.
+  # RangeError unless both are finite and min < max, TypeError for anything
+  # but a Float or Integer (a Rational included). The fields are stored as
+  # Floats. Sealed and re-checked by the binding like Gains.
   class Limits < Data
     attr_reader min: Float
     attr_reader max: Float
-    def self.new: (Numeric min, Numeric max) -> Limits
-                | (min: Numeric, max: Numeric) -> Limits
+    def self.new: ((Float | Integer) min, (Float | Integer) max) -> Limits
+                | (min: (Float | Integer), max: (Float | Integer)) -> Limits
   end
 
   # The core's `Pid`.
@@ -48,10 +49,10 @@ module FeedbackMachines
     # within the limits. Refused: :not_finite (error is NaN or infinite),
     # :invalid_duration (elapsed is zero) or :overflow; the controller is
     # unchanged. Never nil. Raises TypeError for a non-Integer elapsed or a
-    # non-number error, RangeError for an elapsed outside 0..2**64-1,
+    # error that is not a Float or Integer, RangeError for an elapsed outside 0..2**64-1,
     # FrozenError on a frozen controller, all before the controller is
     # stepped. Records no clock: `elapsed` is a span, not an instant.
-    def step: (Numeric error, Integer elapsed) -> (Float | refusal)
+    def step: ((Float | Integer) error, Integer elapsed) -> (Float | refusal)
   end
 
   # The core's `Hysteresis`.
@@ -67,8 +68,8 @@ module FeedbackMachines
 
     # The core's `Hysteresis::observe(value)`. Honoured: the side the band is
     # on after the measurement. Refused: :not_finite, and the band keeps its
-    # side. Never nil. Raises TypeError for a non-number, FrozenError on a
+    # side. Never nil. Raises TypeError for anything but a Float or Integer, FrozenError on a
     # frozen band, before the band moves. Records no clock.
-    def observe: (Numeric value) -> (band | :not_finite)
+    def observe: ((Float | Integer) value) -> (band | :not_finite)
   end
 end

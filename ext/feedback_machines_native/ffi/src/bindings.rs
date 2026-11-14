@@ -1,9 +1,7 @@
 use feedback_machines::{Band, Gains, Hysteresis, Limits, Pid, Refusal};
 use magnus::typed_data::Obj;
-use magnus::{
-    Error, IntoValue, RModule, Ruby, Symbol, TryConvert, Value, function, method, prelude::*,
-};
-use matryona_machines::ruby::{Class, Registry, Symbols, duration, exact_fields};
+use magnus::{Error, IntoValue, RModule, Ruby, Symbol, Value, function, method, prelude::*};
+use matryona_machines::ruby::{Class, Registry, Symbols, duration, exact_fields, real};
 use std::cell::RefCell;
 
 /// The `Data` classes the binding builds and reads, resolved once at init.
@@ -47,12 +45,17 @@ fn validated<T>(ruby: &Ruby, value: Option<T>, message: &'static str) -> Result<
     value.ok_or_else(|| Error::new(ruby.exception_range_error(), message))
 }
 
-fn gains(ruby: &Ruby, p: f64, i: f64, d: f64) -> Result<Gains, Error> {
+/// The core's `Gains` of three reals (exactly a Float or an Integer each,
+/// no `to_f` run; NaN and the infinities are the core's to refuse).
+fn gains(ruby: &Ruby, p: Value, i: Value, d: Value) -> Result<Gains, Error> {
+    let (p, i, d) = (real(p, "p")?, real(i, "i")?, real(d, "d")?);
     let message = "gains must be finite and nonnegative";
     validated(ruby, Gains::new(p, i, d), message)
 }
 
-fn limits(ruby: &Ruby, min: f64, max: f64) -> Result<Limits, Error> {
+/// The core's `Limits` of two reals, read like [`gains`].
+fn limits(ruby: &Ruby, min: Value, max: Value) -> Result<Limits, Error> {
+    let (min, max) = (real(min, "min")?, real(max, "max")?);
     let message = "limits must be finite and min < max";
     validated(ruby, Limits::new(min, max), message)
 }
@@ -65,11 +68,6 @@ fn gains_from(ruby: &Ruby, value: Value) -> Result<Gains, Error> {
     let class = CLASSES.get(ruby)?.gains.get(ruby);
     let message = "gains must be a FeedbackMachines::Gains";
     let [p, i, d] = exact_fields::<3>(ruby, value, class, message)?;
-    let (p, i, d) = (
-        f64::try_convert(p)?,
-        f64::try_convert(i)?,
-        f64::try_convert(d)?,
-    );
     gains(ruby, p, i, d)
 }
 
@@ -79,7 +77,7 @@ fn limits_from(ruby: &Ruby, value: Value) -> Result<Limits, Error> {
     let class = CLASSES.get(ruby)?.limits.get(ruby);
     let message = "limits must be a FeedbackMachines::Limits";
     let [min, max] = exact_fields::<2>(ruby, value, class, message)?;
-    limits(ruby, f64::try_convert(min)?, f64::try_convert(max)?)
+    limits(ruby, min, max)
 }
 
 /// A `FeedbackMachines::Limits` for `limits`. Callers copy the limits out
@@ -90,12 +88,12 @@ fn limits_value(ruby: &Ruby, limits: Limits) -> Result<Value, Error> {
 }
 
 /// What `Gains.new` stores: the validated coefficients as Floats.
-fn checked_gains(ruby: &Ruby, p: f64, i: f64, d: f64) -> Result<(f64, f64, f64), Error> {
+fn checked_gains(ruby: &Ruby, p: Value, i: Value, d: Value) -> Result<(f64, f64, f64), Error> {
     gains(ruby, p, i, d).map(|gains| (gains.p(), gains.i(), gains.d()))
 }
 
 /// What `Limits.new` stores: the validated range as Floats.
-fn checked_limits(ruby: &Ruby, min: f64, max: f64) -> Result<(f64, f64), Error> {
+fn checked_limits(ruby: &Ruby, min: Value, max: Value) -> Result<(f64, f64), Error> {
     limits(ruby, min, max).map(|limits| (limits.min(), limits.max()))
 }
 
@@ -121,7 +119,7 @@ impl Controller {
 
     fn step(ruby: &Ruby, this: Obj<Self>, error: Value, elapsed: Value) -> Result<Value, Error> {
         this.check_frozen()?;
-        let error = f64::try_convert(error)?;
+        let error = real(error, "error")?;
         let elapsed = duration(elapsed, "elapsed")?;
         let outcome = this.0.borrow_mut().step(error, elapsed);
         Ok(match outcome {
@@ -152,7 +150,7 @@ impl BandController {
 
     fn observe(ruby: &Ruby, this: Obj<Self>, value: Value) -> Result<Symbol, Error> {
         this.check_frozen()?;
-        let value = f64::try_convert(value)?;
+        let value = real(value, "value")?;
         let outcome = this.0.borrow_mut().observe(value);
         Ok(match outcome {
             Ok(band) => Bands::symbol(ruby, band),

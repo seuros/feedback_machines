@@ -90,6 +90,23 @@ class FeedbackNativeTest < Minitest::Test
     assert_raises(RangeError) { F::Gains.new(1.0, 0.0, 0.0).with(p: -1.0) }
   end
 
+  def test_reals_are_exactly_a_float_or_an_integer
+    floatish = Object.new
+    def floatish.to_f = 1.0
+    pid = pid(1.0, 0.0, 0.0, -10.0, 10.0)
+    band = F::Hysteresis.new(F::Limits.new(0.0, 1.0))
+    [Rational(1, 2), floatish, 1i].each do |invalid|
+      assert_equal 'p must be a Float or Integer', assert_raises(TypeError) { F::Gains.new(invalid, 0, 0) }.message
+      assert_equal 'd must be a Float or Integer', assert_raises(TypeError) { F::Gains.new(0, 0, invalid) }.message
+      assert_equal 'max must be a Float or Integer', assert_raises(TypeError) { F::Limits.new(0, invalid) }.message
+      assert_equal 'error must be a Float or Integer', assert_raises(TypeError) { pid.step(invalid, SECOND) }.message
+      assert_equal 'value must be a Float or Integer', assert_raises(TypeError) { band.observe(invalid) }.message
+    end
+    assert_equal :low, band.state
+    assert_in_delta 1.0, pid.step(1, SECOND)
+    assert_equal [10.0**17, 0.0, 0.0], F::Gains.new(10**17, 0, 0).to_h.values
+  end
+
   def test_derivative_history_and_independent_controllers_survive_gc
     pid = pid(0.0, 0.0, 1.0, -100.0, 100.0)
     other = pid(0.0, 0.0, 1.0, -100.0, 100.0)
