@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0](https://github.com/seuros/feedback_machines/compare/feedback-machines-v0.3.0...feedback-machines-v0.4.0) (2026-11-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* seal Gains and Limits, re-validate them at the binding, hold no borrow while Limits.new runs
+
+### Features
+
+* seal Gains and Limits, re-validate them at the binding, hold no borrow while Limits.new runs ([8aee9ef](https://github.com/seuros/feedback_machines/commit/8aee9efe086af88530c672abd235f92f64d4fb32))
+
 ## [0.3.0](https://github.com/seuros/feedback_machines/compare/feedback-machines-v0.2.2...feedback-machines-v0.3.0) (2026-11-13)
 
 
