@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/seuros/feedback_machines/compare/feedback-machines-v0.4.0...feedback-machines-v0.5.0) (2026-11-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* build the binding on matryona-machines 0.2; read Gains and Limits from the struct; compiler-checked symbols; ship no test files
+
+### Features
+
+* build the binding on matryona-machines 0.2; read Gains and Limits from the struct; compiler-checked symbols; ship no test files ([19023a5](https://github.com/seuros/feedback_machines/commit/19023a591da9a54ecb606eab51a9cc035eccf7a7))
+
 ## [0.4.0](https://github.com/seuros/feedback_machines/compare/feedback-machines-v0.3.0...feedback-machines-v0.4.0) (2026-11-14)
 
 
