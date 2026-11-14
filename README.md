@@ -192,6 +192,7 @@ A non-finite reading answers `:not_finite` and the band keeps its state.
 ## The Rules of the Tender
 
 - **Configuration is two values, passed positionally.** `Gains.new(p, i, d)` and `Limits.new(min, max)` mirror the core's structs, field for field. `Pid.new(gains, limits)`, `Hysteresis.new(limits)`. There are no keyword shortcuts and no default gains: say all three.
+- **A value is valid or does not exist.** `Gains` and `Limits` validate through the core's own constructors whether the gem built them or you did, `with` included. Wrong type is `TypeError`, a value the core's constructor rejects is `RangeError`. Both classes are sealed: subclassing raises `TypeError` and `allocate` is gone. That stops accidents, not reflection, so the binding checks too: `Pid.new` and `Hysteresis.new` take only instances of exactly `Gains` and `Limits` (`TypeError` otherwise, a subclass included) and run their fields through the core's constructors again (`RangeError`), so a value forged with `Data#initialize` or `Marshal` never reaches the core.
 - **Gains are finite and nonnegative.** Negative or infinite `p`, `i`, or `d` raises `RangeError` from `Gains.new`. Flip the sign of your error instead.
 - **Limits need `min < max`.** Equal, reversed or non-finite raises `RangeError` from `Limits.new`. Same value type for the band.
 - **`elapsed` is a span in Integer nanoseconds**, not a timestamp and not seconds: subtract two `Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond)` readings. A Float raises `TypeError`, a negative one raises `RangeError`. Zero is refused with `:invalid_duration`.
@@ -206,17 +207,21 @@ A non-finite reading answers `:not_finite` and the band keeps its state.
 
 A call that is honoured answers with a value. A call that is not honoured answers with one of the refusal symbols below, the snake_case of a core `Refusal` variant, and changes nothing. There is no catch-all symbol.
 
-| Call | Honoured | Refusals |
-| --- | --- | --- |
-| `Gains.new(p, i, d)` | `Gains` | none; an invalid gain raises `RangeError` |
-| `Limits.new(min, max)` | `Limits` | none; an invalid range raises `RangeError` |
-| `Pid.new(gains, limits)` | `Pid` | none |
-| `Pid#step(error, elapsed)` | `Float` within the limits | `:not_finite` (error is NaN or infinite), `:invalid_duration` (elapsed is zero), `:overflow` (a term of the calculation is not finite) |
-| `Pid#gains`, `Pid#limits` | `Gains`, `Limits` | none, a query |
-| `Hysteresis.new(limits)` | `Hysteresis`, starting `:low` | none |
-| `Hysteresis#observe(value)` | `:low`, `:high` | `:not_finite` |
-| `Hysteresis#state` | `:low`, `:high` | none, a query |
-| `Hysteresis#limits` | `Limits` | none, a query |
+| Call | Honoured | Records the clock | Refusals |
+| --- | --- | --- | --- |
+| `Gains.new(p, i, d)` | `Gains` | no clock | none; an invalid gain raises `RangeError` |
+| `Limits.new(min, max)` | `Limits` | no clock | none; an invalid range raises `RangeError` |
+| `Pid.new(gains, limits)` | `Pid` | no clock | none |
+| `Pid#step(error, elapsed)` | `Float` within the limits | no, `elapsed` is a span | `:not_finite` (error is NaN or infinite), `:invalid_duration` (elapsed is zero), `:overflow` (a term of the calculation is not finite) |
+| `Pid#gains`, `Pid#limits` | `Gains`, `Limits` | no, a query | none, a query |
+| `Hysteresis.new(limits)` | `Hysteresis`, starting `:low` | no clock | none |
+| `Hysteresis#observe(value)` | `:low`, `:high` | no clock | `:not_finite` |
+| `Hysteresis#state` | `:low`, `:high` | no, a query | none, a query |
+| `Hysteresis#limits` | `Limits` | no, a query | none, a query |
+
+No answer records a clock, because there is none: `elapsed` is a span the caller measured, not an instant, and the controllers keep no "latest time". Nothing here can answer a time regression.
+
+Everything that can raise (a non-number, a non-Integer or out-of-range `elapsed`, a frozen receiver) is checked before the core runs. A call that raised stepped nothing.
 
 ## What You Think You're Doing vs Reality
 

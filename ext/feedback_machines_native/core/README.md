@@ -57,6 +57,11 @@ assert_eq!(controller.step(2.0, Duration::ZERO), Err(Refusal::InvalidDuration));
 - **Time.** `elapsed` is a `core::time::Duration`: the span since the previous
   sample, not an instant. The controllers read no clock and keep none. `error`,
   the gains, the limits and the output are `f64` control quantities, not time.
+- **No recorded clock.** The rule "an honoured call records `now` exactly when
+  its answer depends on `now`" has nothing to act on here: no method takes an
+  instant, and neither controller keeps one.
+- **No unreachable arms.** The crate has no `panic!`, `assert!`,
+  `unreachable!` or `expect`, and no refusal that cannot occur.
 - **Exhaustive.** `Band` and `Refusal` are exhaustive enums; a new variant is a
   breaking change.
 - **No ids.** Nothing is issued, so there are no scopes and nothing to resume.

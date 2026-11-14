@@ -12,7 +12,9 @@ module FeedbackMachines
 
   # The core's `Gains`. `new` mirrors `Gains::new(p, i, d)`: it raises
   # RangeError unless every gain is finite and nonnegative, TypeError for a
-  # non-number. The fields are stored as Floats.
+  # non-number. The fields are stored as Floats. Sealed (subclassing raises
+  # TypeError, no `allocate`); the binding reads only instances of exactly
+  # this class and re-checks their fields, so a forged value raises.
   class Gains < Data
     attr_reader p: Float
     attr_reader i: Float
@@ -23,7 +25,8 @@ module FeedbackMachines
 
   # The core's `Limits`. `new` mirrors `Limits::new(min, max)`: it raises
   # RangeError unless both are finite and min < max, TypeError for a
-  # non-number. The fields are stored as Floats.
+  # non-number. The fields are stored as Floats. Sealed and re-checked by the
+  # binding like Gains.
   class Limits < Data
     attr_reader min: Float
     attr_reader max: Float
@@ -33,8 +36,9 @@ module FeedbackMachines
 
   # The core's `Pid`.
   class Pid
-    # The core's `Pid::new(gains, limits)`. Raises TypeError unless given a
-    # Gains and a Limits.
+    # The core's `Pid::new(gains, limits)`. Raises TypeError unless given
+    # instances of exactly Gains and Limits, RangeError if their fields fail
+    # the core's constructors.
     def self.new: (Gains gains, Limits limits) -> Pid
     def gains: () -> Gains
     def limits: () -> Limits
@@ -45,14 +49,16 @@ module FeedbackMachines
     # :invalid_duration (elapsed is zero) or :overflow; the controller is
     # unchanged. Never nil. Raises TypeError for a non-Integer elapsed or a
     # non-number error, RangeError for an elapsed outside 0..2**64-1,
-    # FrozenError on a frozen controller.
+    # FrozenError on a frozen controller, all before the controller is
+    # stepped. Records no clock: `elapsed` is a span, not an instant.
     def step: (Numeric error, Integer elapsed) -> (Float | refusal)
   end
 
   # The core's `Hysteresis`.
   class Hysteresis
     # The core's `Hysteresis::new(limits)`: starts :low. Raises TypeError
-    # unless given a Limits.
+    # unless given an instance of exactly Limits, RangeError if its fields
+    # fail the core's constructor.
     def self.new: (Limits limits) -> Hysteresis
     def limits: () -> Limits
 
@@ -62,7 +68,7 @@ module FeedbackMachines
     # The core's `Hysteresis::observe(value)`. Honoured: the side the band is
     # on after the measurement. Refused: :not_finite, and the band keeps its
     # side. Never nil. Raises TypeError for a non-number, FrozenError on a
-    # frozen band.
+    # frozen band, before the band moves. Records no clock.
     def observe: (Numeric value) -> (band | :not_finite)
   end
 end

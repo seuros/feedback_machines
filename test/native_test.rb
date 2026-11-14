@@ -31,7 +31,7 @@ class FeedbackNativeTest < Minitest::Test
     assert_raises(ArgumentError) { pid.step(1.0) }
   end
 
-  def test_every_refusal_is_a_symbol_and_changes_nothing
+  def test_every_refusal_and_raise_changes_nothing
     pid = pid(1.0, 1.0, 1.0, -1000.0, 1000.0)
     twin = pid(1.0, 1.0, 1.0, -1000.0, 1000.0)
     [pid, twin].each { |controller| assert_in_delta 4.0, controller.step(2.0, SECOND) }
@@ -42,7 +42,15 @@ class FeedbackNativeTest < Minitest::Test
     assert_equal :invalid_duration, pid.step(2.0, 0)
     assert_equal :overflow, pid.step(Float::MAX, (2**64) - 1)
     assert_equal :overflow, pid.step(1.0e300, 1)
+    # The binding never loses work: whatever raises does so before the core
+    # runs, so a call that raised stepped nothing either.
+    assert_raises(TypeError) { pid.step('3', SECOND) }
+    assert_raises(TypeError) { pid.step(3.0, 1.5) }
+    assert_raises(RangeError) { pid.step(3.0, -1) }
     5.times { assert_equal twin.step(3.0, SECOND / 4), pid.step(3.0, SECOND / 4) }
+    band = F::Hysteresis.new(F::Limits.new(0, 10))
+    assert_raises(TypeError) { band.observe('11') }
+    assert_equal :low, band.state
   end
 
   def test_configuration_mirrors_the_core

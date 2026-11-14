@@ -29,4 +29,13 @@ require 'feedback_machines_native/feedback_machines_native'
 
 module FeedbackMachines
   private_class_method :__gains, :__limits
+
+  # The values are final. `initialize` is where each validates, and a subclass
+  # could override it, or `allocate` build an instance that never ran it:
+  # subclassing raises TypeError and `allocate` is gone. This stops accidents,
+  # not reflection, so the binding also checks every value it reads.
+  [Gains, Limits].each do |value|
+    value.singleton_class.undef_method(:allocate)
+    value.define_singleton_method(:inherited) { |_| raise TypeError, "#{value} cannot be subclassed" }
+  end
 end

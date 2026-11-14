@@ -20,6 +20,9 @@ fn proportional_derivative_and_sampling_are_explicit() {
         (2.0, 0.0, 1.0)
     );
     assert_eq!((pid.limits().min(), pid.limits().max()), (-100.0, 100.0));
+    // The shortest interval is an interval: one nanosecond integrates.
+    let mut pid = self::pid(1.0, 1.0, 0.0, -10.0, 10.0);
+    assert_eq!(pid.step(2.0, Duration::from_nanos(1)), Ok(2.0 + 2.0e-9));
 }
 
 #[test]
@@ -35,14 +38,22 @@ fn saturation_does_not_wind_up_the_integrator() {
 
 #[test]
 fn configuration_is_validated_by_the_constructors() {
-    assert!(Gains::new(f64::NAN, 0.0, 0.0).is_none());
-    assert!(Gains::new(-1.0, 0.0, 0.0).is_none());
-    assert!(Gains::new(0.0, f64::INFINITY, 0.0).is_none());
+    for (p, i, d) in [
+        (f64::NAN, 0.0, 0.0),
+        (-1.0, 0.0, 0.0),
+        (0.0, f64::INFINITY, 0.0),
+    ] {
+        assert_eq!(Gains::new(p, i, d), None, "{p} {i} {d}");
+    }
     assert!(Gains::new(0.0, 0.0, 0.0).is_some());
-    assert!(Limits::new(1.0, 1.0).is_none());
-    assert!(Limits::new(2.0, 1.0).is_none());
-    assert!(Limits::new(f64::NEG_INFINITY, 1.0).is_none());
-    assert!(Limits::new(0.0, f64::NAN).is_none());
+    for (min, max) in [
+        (1.0, 1.0),
+        (2.0, 1.0),
+        (f64::NEG_INFINITY, 1.0),
+        (0.0, f64::NAN),
+    ] {
+        assert_eq!(Limits::new(min, max), None, "{min} {max}");
+    }
 }
 
 #[test]
@@ -74,12 +85,6 @@ fn every_pid_refusal_names_its_reason_and_changes_nothing() {
         Err(Refusal::Overflow)
     );
     assert_eq!(pid, before);
-}
-
-#[test]
-fn the_shortest_interval_is_an_interval() {
-    let mut pid = pid(1.0, 1.0, 0.0, -10.0, 10.0);
-    assert_eq!(pid.step(2.0, Duration::from_nanos(1)), Ok(2.0 + 2.0e-9));
 }
 
 #[test]
