@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/seuros/feedback_machines/compare/feedback_machines/v0.4.0...feedback_machines/v0.5.0) (2026-11-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* read reals exactly through matryona-machines 0.3
+
+### Features
+
+* read reals exactly through matryona-machines 0.3 ([21418cd](https://github.com/seuros/feedback_machines/commit/21418cdbfe6b897fe9de975ca9b8a157aed6b648))
+
 ## [0.4.0](https://github.com/seuros/feedback_machines/compare/feedback_machines/v0.3.0...feedback_machines/v0.4.0) (2026-11-14)
 
 
