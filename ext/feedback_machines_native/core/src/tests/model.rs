@@ -1,21 +1,18 @@
 //! Randomized comparison against a spelled-out reference controller.
 use crate::{Band, Gains, Hysteresis, Limits, Pid, Refusal};
 use core::time::Duration;
+use matryona_machines::testing::SplitMix64;
 
-/// `SplitMix64`: deterministic draws, no dependency.
-struct Draws(u64);
+/// Controller inputs drawn from a `SplitMix64` stream.
+struct Draws(SplitMix64);
 
 impl Draws {
-    const fn next(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
-        let mut x = self.0;
-        x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        x ^ (x >> 31)
+    const fn new(seed: u64) -> Self {
+        Self(SplitMix64::new(seed))
     }
 
-    fn below(&mut self, bound: u64) -> u64 {
-        self.next() % bound
+    const fn below(&mut self, bound: u64) -> u64 {
+        self.0.below(bound)
     }
 
     /// A value in `-scale..=scale`, in steps of a thousandth of `scale`.
@@ -84,7 +81,7 @@ impl Reference {
 
 #[test]
 fn random_samples_match_the_reference_controller() {
-    let mut draws = Draws(4208);
+    let mut draws = Draws::new(4208);
     let mut refusals = [0_u32; 3];
     for _ in 0..300 {
         let gains = (
@@ -125,7 +122,7 @@ fn random_samples_match_the_reference_controller() {
 
 #[test]
 fn random_measurements_match_the_reference_band() {
-    let mut draws = Draws(1865);
+    let mut draws = Draws::new(1865);
     for _ in 0..300 {
         let min = draws.signed(10.0);
         let max = min + 0.5 + draws.signed(10.0).abs();

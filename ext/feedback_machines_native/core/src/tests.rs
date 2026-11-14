@@ -2,6 +2,7 @@
 mod model;
 
 use super::*;
+use matryona_machines::testing::refuses;
 
 fn pid(p: f64, i: f64, d: f64, min: f64, max: f64) -> Pid {
     Pid::new(
@@ -64,27 +65,26 @@ fn every_pid_refusal_names_its_reason_and_changes_nothing() {
         if warmed {
             assert_eq!(pid.step(0.5, second), Ok(1.0));
         }
-        let before = pid.clone();
         for error in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            assert_eq!(pid.step(error, second), Err(Refusal::NotFinite));
+            refuses(&mut pid, Refusal::NotFinite, |pid| pid.step(error, second));
             // A bad sample is reported as such whatever the interval.
-            assert_eq!(pid.step(error, Duration::ZERO), Err(Refusal::NotFinite));
-            assert_eq!(pid, before);
+            refuses(&mut pid, Refusal::NotFinite, |pid| {
+                pid.step(error, Duration::ZERO)
+            });
         }
-        assert_eq!(pid.step(1.0, Duration::ZERO), Err(Refusal::InvalidDuration));
-        assert_eq!(pid, before);
-        assert_eq!(pid.step(f64::MAX, Duration::MAX), Err(Refusal::Overflow));
-        assert_eq!(pid, before);
+        refuses(&mut pid, Refusal::InvalidDuration, |pid| {
+            pid.step(1.0, Duration::ZERO)
+        });
+        refuses(&mut pid, Refusal::Overflow, |pid| {
+            pid.step(f64::MAX, Duration::MAX)
+        });
     }
     // Derivative overflow: a finite swing over the shortest interval.
     let mut pid = self::pid(0.0, 0.0, 1.0, -1.0, 1.0);
     assert_eq!(pid.step(-1.0e300, second), Ok(0.0));
-    let before = pid.clone();
-    assert_eq!(
-        pid.step(1.0e300, Duration::from_nanos(1)),
-        Err(Refusal::Overflow)
-    );
-    assert_eq!(pid, before);
+    refuses(&mut pid, Refusal::Overflow, |pid| {
+        pid.step(1.0e300, Duration::from_nanos(1))
+    });
 }
 
 #[test]
@@ -95,9 +95,7 @@ fn hysteresis_retains_state_within_the_band() {
     assert_eq!(band.observe(2.0), Ok(Band::High));
     assert_eq!(band.observe(0.0), Ok(Band::High));
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        let before = band.clone();
-        assert_eq!(band.observe(value), Err(Refusal::NotFinite));
-        assert_eq!(band, before);
+        refuses(&mut band, Refusal::NotFinite, |band| band.observe(value));
     }
     assert_eq!(band.state(), Band::High);
     assert_eq!(band.observe(-2.0), Ok(Band::Low));

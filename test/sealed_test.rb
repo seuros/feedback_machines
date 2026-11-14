@@ -54,6 +54,8 @@ class SealedTest < Minitest::Test
     limits = F::Limits.new(0, 1)
     limits.singleton_class
     assert_equal limits, F::Hysteresis.new(limits).limits
+    gains = F::Gains.new(1, 0, 0).tap(&:singleton_class)
+    assert_equal F::Gains.new(1, 0, 0), F::Pid.new(gains.clone, limits.clone).gains
   end
 
   # Runs `hook` inside `Limits.new` and `Gains.new` while it is set.
@@ -80,5 +82,28 @@ class SealedTest < Minitest::Test
     assert_equal :high, band.state
   ensure
     F::Limits.hook = F::Gains.hook = nil
+  end
+
+  def test_redefined_readers_are_ignored
+    gains = F::Gains.new(1, 0, 0)
+    limits = F::Limits.new(0, 1)
+    with_raising_readers(F::Gains, F::Limits) do
+      assert_equal 0.5, F::Pid.new(gains, limits).step(0.5, 1)
+      assert_equal :low, F::Hysteresis.new(limits).observe(-1.0)
+    end
+  end
+
+  # Every reader of `classes` raises while the block runs.
+  def with_raising_readers(*classes)
+    saved = classes.flat_map { |klass| klass.members.map { |name| [klass, name, klass.instance_method(name)] } }
+    verbose = $VERBOSE
+    $VERBOSE = nil
+    saved.each { |klass, name, _| klass.define_method(name) { raise 'the binding ran a reader' } }
+    $VERBOSE = verbose
+    yield
+  ensure
+    $VERBOSE = nil
+    saved.each { |klass, name, method| klass.define_method(name, method) }
+    $VERBOSE = verbose
   end
 end

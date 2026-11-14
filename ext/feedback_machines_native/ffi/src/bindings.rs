@@ -1,44 +1,43 @@
-use crate::sealed::Sealed;
 use feedback_machines::{Band, Gains, Hysteresis, Limits, Pid, Refusal};
 use magnus::typed_data::Obj;
 use magnus::{
-    Error, Integer, IntoValue, Ruby, Symbol, TryConvert, Value, function, method, prelude::*,
+    Error, IntoValue, RModule, Ruby, Symbol, TryConvert, Value, function, method, prelude::*,
 };
-use std::{cell::RefCell, time::Duration};
+use matryona_machines::ruby::{Class, Registry, Symbols, duration, exact_fields};
+use std::cell::RefCell;
 
-/// `FeedbackMachines::Gains`, resolved at init.
-static GAINS: Sealed = Sealed::new("Gains");
-/// `FeedbackMachines::Limits`, resolved at init.
-static LIMITS: Sealed = Sealed::new("Limits");
+/// The `Data` classes the binding builds and reads, resolved once at init.
+struct Classes {
+    gains: Class,
+    limits: Class,
+}
 
-/// A span as Integer nanoseconds.
-#[derive(Clone, Copy)]
-struct Nanos(u64);
+static CLASSES: Registry<Classes> = Registry::new("feedback_machines");
 
-impl TryConvert for Nanos {
-    fn try_convert(value: Value) -> Result<Self, Error> {
-        if Integer::from_value(value).is_none() {
-            return Err(Error::new(
-                Ruby::get_with(value).exception_type_error(),
-                "elapsed must be an Integer number of nanoseconds",
-            ));
-        }
-        u64::try_convert(value).map(Self)
+/// Resolves the classes `lib/feedback_machines.rb` defined before it loaded
+/// the extension. Called once, from init.
+fn resolve(ruby: &Ruby, module: RModule) -> Result<(), Error> {
+    let classes = Classes {
+        gains: Class::resolve(ruby, module, "Gains")?,
+        limits: Class::resolve(ruby, module, "Limits")?,
+    };
+    CLASSES.set(ruby, classes).map(drop)
+}
+
+matryona_machines::symbols! {
+    /// The core's refusals as Symbols: the snake case of each variant.
+    Refusals for Refusal as "a refusal" {
+        NotFinite => "not_finite",
+        InvalidDuration => "invalid_duration",
+        Overflow => "overflow",
     }
 }
 
-const fn refusal(refusal: Refusal) -> &'static str {
-    match refusal {
-        Refusal::NotFinite => "not_finite",
-        Refusal::InvalidDuration => "invalid_duration",
-        Refusal::Overflow => "overflow",
-    }
-}
-
-const fn band(band: Band) -> &'static str {
-    match band {
-        Band::Low => "low",
-        Band::High => "high",
+matryona_machines::symbols! {
+    /// The hysteresis bands as Symbols.
+    Bands for Band as "a band" {
+        Low => "low",
+        High => "high",
     }
 }
 
@@ -59,30 +58,35 @@ fn limits(ruby: &Ruby, min: f64, max: f64) -> Result<Limits, Error> {
 }
 
 /// The core's `Gains` of a `FeedbackMachines::Gains`: `TypeError` for
-/// anything but an instance of exactly that class, its members read natively
-/// and re-validated through `Gains::new`, so a forged value never reaches the
-/// core.
+/// anything but an instance of exactly that class, its members read from the
+/// struct itself (no reader runs) and re-validated through `Gains::new`, so a
+/// forged value never reaches the core.
 fn gains_from(ruby: &Ruby, value: Value) -> Result<Gains, Error> {
-    let members = GAINS.read(ruby, value, "gains")?;
-    gains(
-        ruby,
-        members.get("p")?,
-        members.get("i")?,
-        members.get("d")?,
-    )
+    let class = CLASSES.get(ruby)?.gains.get(ruby);
+    let message = "gains must be a FeedbackMachines::Gains";
+    let [p, i, d] = exact_fields::<3>(ruby, value, class, message)?;
+    let (p, i, d) = (
+        f64::try_convert(p)?,
+        f64::try_convert(i)?,
+        f64::try_convert(d)?,
+    );
+    gains(ruby, p, i, d)
 }
 
 /// The core's `Limits` of a `FeedbackMachines::Limits`, checked like
 /// [`gains_from`].
 fn limits_from(ruby: &Ruby, value: Value) -> Result<Limits, Error> {
-    let members = LIMITS.read(ruby, value, "limits")?;
-    limits(ruby, members.get("min")?, members.get("max")?)
+    let class = CLASSES.get(ruby)?.limits.get(ruby);
+    let message = "limits must be a FeedbackMachines::Limits";
+    let [min, max] = exact_fields::<2>(ruby, value, class, message)?;
+    limits(ruby, f64::try_convert(min)?, f64::try_convert(max)?)
 }
 
 /// A `FeedbackMachines::Limits` for `limits`. Callers copy the limits out
 /// first: no borrow is held while `Limits.new` runs.
 fn limits_value(ruby: &Ruby, limits: Limits) -> Result<Value, Error> {
-    LIMITS.build(ruby, (limits.min(), limits.max()))
+    let class = CLASSES.get(ruby)?.limits.get(ruby);
+    class.funcall("new", (limits.min(), limits.max()))
 }
 
 /// What `Gains.new` stores: the validated coefficients as Floats.
@@ -106,7 +110,8 @@ impl Controller {
 
     fn gains(ruby: &Ruby, this: &Self) -> Result<Value, Error> {
         let gains = this.0.borrow().gains();
-        GAINS.build(ruby, (gains.p(), gains.i(), gains.d()))
+        let class = CLASSES.get(ruby)?.gains.get(ruby);
+        class.funcall("new", (gains.p(), gains.i(), gains.d()))
     }
 
     fn limits(ruby: &Ruby, this: &Self) -> Result<Value, Error> {
@@ -114,15 +119,14 @@ impl Controller {
         limits_value(ruby, limits)
     }
 
-    fn step(ruby: &Ruby, this: Obj<Self>, error: f64, elapsed: Nanos) -> Result<Value, Error> {
+    fn step(ruby: &Ruby, this: Obj<Self>, error: Value, elapsed: Value) -> Result<Value, Error> {
         this.check_frozen()?;
-        let outcome = this
-            .0
-            .borrow_mut()
-            .step(error, Duration::from_nanos(elapsed.0));
+        let error = f64::try_convert(error)?;
+        let elapsed = duration(elapsed, "elapsed")?;
+        let outcome = this.0.borrow_mut().step(error, elapsed);
         Ok(match outcome {
             Ok(output) => output.into_value_with(ruby),
-            Err(refused) => ruby.to_symbol(refusal(refused)).as_value(),
+            Err(refused) => Refusals::symbol(ruby, refused).as_value(),
         })
     }
 }
@@ -143,21 +147,24 @@ impl BandController {
     }
 
     fn state(ruby: &Ruby, this: &Self) -> Symbol {
-        ruby.to_symbol(band(this.0.borrow().state()))
+        Bands::symbol(ruby, this.0.borrow().state())
     }
 
-    fn observe(ruby: &Ruby, this: Obj<Self>, value: f64) -> Result<Symbol, Error> {
+    fn observe(ruby: &Ruby, this: Obj<Self>, value: Value) -> Result<Symbol, Error> {
         this.check_frozen()?;
+        let value = f64::try_convert(value)?;
         let outcome = this.0.borrow_mut().observe(value);
-        Ok(ruby.to_symbol(outcome.map_or_else(refusal, band)))
+        Ok(match outcome {
+            Ok(band) => Bands::symbol(ruby, band),
+            Err(refused) => Refusals::symbol(ruby, refused),
+        })
     }
 }
 
 #[magnus::init]
 fn init(ruby: &Ruby) -> Result<(), Error> {
     let module = ruby.define_module("FeedbackMachines")?;
-    GAINS.resolve(ruby, module)?;
-    LIMITS.resolve(ruby, module)?;
+    resolve(ruby, module)?;
     module.define_singleton_method("__gains", function!(checked_gains, 3))?;
     module.define_singleton_method("__limits", function!(checked_limits, 2))?;
     let pid = module.define_class("Pid", ruby.class_object())?;

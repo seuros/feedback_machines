@@ -26,6 +26,8 @@ class FeedbackNativeTest < Minitest::Test
     end
     assert_raises(RangeError) { pid.step(1.0, -1) }
     assert_raises(RangeError) { pid.step(1.0, 2**64) }
+    assert_equal 'elapsed must be an Integer', assert_raises(TypeError) { pid.step(1.0, 0.5) }.message
+    assert_equal "elapsed must be in 0..=#{(2**64) - 1}", assert_raises(RangeError) { pid.step(1.0, -1) }.message
     assert_kind_of Float, pid.step(7.0, (2**64) - 1)
     assert_raises(ArgumentError) { pid.step(error: 1.0, elapsed: SECOND) }
     assert_raises(ArgumentError) { pid.step(1.0) }
@@ -117,9 +119,12 @@ class FeedbackNativeTest < Minitest::Test
   def test_freezing
     pid = pid(1.0, 0.0, 0.0, 0.0, 1.0).freeze
     assert_raises(FrozenError) { pid.step(1.0, SECOND) }
+    # Frozen is checked first, before the arguments are read.
+    assert_raises(FrozenError) { pid.step('1', 0.5) }
     assert_equal 1.0, pid.gains.p
     band = F::Hysteresis.new(F::Limits.new(0.0, 1.0)).freeze
     assert_raises(FrozenError) { band.observe(1.0) }
+    assert_raises(FrozenError) { band.observe(nil) }
     assert_equal :low, band.state
   end
 
