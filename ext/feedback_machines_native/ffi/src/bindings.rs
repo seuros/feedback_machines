@@ -218,5 +218,9 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     band.define_singleton_method("restored", function!(BandController::restored, 2))?;
     band.define_method("limits", method!(BandController::limits, 0))?;
     band.define_method("state", method!(BandController::state, 0))?;
-    band.define_method("observe", method!(BandController::observe, 1))
+    band.define_method("observe", method!(BandController::observe, 1))?;
+    // `new` and `restored` answer these: their classes are fixed now, so
+    // building a controller never runs `Object.const_get`.
+    Class::pin_wrapped::<Controller>(ruby, pid)?;
+    Class::pin_wrapped::<BandController>(ruby, band).map(drop)
 }
