@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/seuros/feedback_machines/compare/feedback_machines/v0.6.0...feedback_machines/v0.6.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* fix wrapped classes at load so building a value runs no Ruby ([9bb4894](https://github.com/seuros/feedback_machines/commit/9bb4894c90331d9112dbb49a74f130eaa28c4eb3))
+
 ## [0.6.0](https://github.com/seuros/feedback_machines/compare/feedback_machines/v0.5.1...feedback_machines/v0.6.0) (2026-11-16)
 
 
