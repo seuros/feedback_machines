@@ -1,4 +1,5 @@
 #![no_std]
+#![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 #![doc = include_str!("../README.md")]
 
 use core::{fmt, time::Duration};
@@ -35,13 +36,14 @@ pub struct Gains {
 }
 
 impl Gains {
-    /// Validate gain coefficients: `None` unless all are finite and nonnegative.
+    /// Validate gain coefficients: `None` unless all are finite and
+    /// nonnegative. A negative zero is stored as zero.
     #[must_use]
-    pub fn new(p: f64, i: f64, d: f64) -> Option<Self> {
-        [p, i, d]
-            .iter()
-            .all(|x| x.is_finite() && *x >= 0.0)
-            .then_some(Self { p, i, d })
+    pub const fn new(p: f64, i: f64, d: f64) -> Option<Self> {
+        match (gain(p), gain(i), gain(d)) {
+            (Some(p), Some(i), Some(d)) => Some(Self { p, i, d }),
+            _ => None,
+        }
     }
 
     /// Proportional gain.
@@ -60,6 +62,16 @@ impl Gains {
     #[must_use]
     pub const fn d(&self) -> f64 {
         self.d
+    }
+}
+
+/// `value` as a gain: `None` unless finite and nonnegative, a negative zero
+/// as zero.
+const fn gain(value: f64) -> Option<f64> {
+    if value.is_finite() && value >= 0.0 {
+        Some(if value == 0.0 { 0.0 } else { value })
+    } else {
+        None
     }
 }
 
@@ -113,6 +125,48 @@ impl Pid {
             integral: 0.0,
             previous: None,
         }
+    }
+
+    /// A controller resuming saved state: the [`Pid::integral`] and
+    /// [`Pid::previous_error`] read from one before it was put away.
+    ///
+    /// `None` unless `integral` and `previous_error` (when present) are
+    /// finite. A negative zero integral is stored as zero, as `step` would
+    /// have left it.
+    #[must_use]
+    pub const fn restored(
+        gains: Gains,
+        limits: Limits,
+        integral: f64,
+        previous_error: Option<f64>,
+    ) -> Option<Self> {
+        if !integral.is_finite() {
+            return None;
+        }
+        if let Some(previous) = previous_error
+            && !previous.is_finite()
+        {
+            return None;
+        }
+        Some(Self {
+            gains,
+            limits,
+            integral: if integral == 0.0 { 0.0 } else { integral },
+            previous: previous_error,
+        })
+    }
+
+    /// The accumulated error-seconds the integral term multiplies.
+    #[must_use]
+    pub const fn integral(&self) -> f64 {
+        self.integral
+    }
+
+    /// The error of the previous honoured sample, which the derivative term
+    /// differences against: `None` before the first.
+    #[must_use]
+    pub const fn previous_error(&self) -> Option<f64> {
+        self.previous
     }
 
     /// The gains this controller was built with.
@@ -189,6 +243,14 @@ impl Hysteresis {
             limits,
             state: Band::Low,
         }
+    }
+
+    /// A band resuming saved state: on `state`, the [`Hysteresis::state`]
+    /// read from one before it was put away. Every side is valid for every
+    /// band.
+    #[must_use]
+    pub const fn restored(limits: Limits, state: Band) -> Self {
+        Self { limits, state }
     }
 
     /// The thresholds this band was built with.

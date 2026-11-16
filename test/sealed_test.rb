@@ -26,6 +26,10 @@ class SealedTest < Minitest::Test
       assert_raises(NoMethodError) { value.allocate }
       assert_raises(TypeError) { Class.new(value) }
     end
+    [F::Pid, F::Hysteresis].each do |controller|
+      assert_raises(TypeError) { controller.allocate }
+      assert_raises(TypeError) { Class.new(controller) }
+    end
     assert_kind_of TypeError, NAMED_SUBCLASS_ERROR
     assert_equal F::Limits, ForgedLimits.superclass, 'the constant leaks'
   end

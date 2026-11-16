@@ -1,8 +1,8 @@
-#![allow(clippy::expect_used, clippy::float_cmp)]
+#![allow(clippy::float_cmp)]
 mod model;
 
 use super::*;
-use matryona_machines::testing::refuses;
+use matryona_machines::testing::{describes, refuses};
 
 fn pid(p: f64, i: f64, d: f64, min: f64, max: f64) -> Pid {
     Pid::new(
@@ -104,14 +104,65 @@ fn hysteresis_retains_state_within_the_band() {
 
 #[test]
 fn refusals_describe_themselves() {
-    extern crate std;
-    use std::string::ToString;
-    for refusal in [
-        Refusal::NotFinite,
-        Refusal::InvalidDuration,
-        Refusal::Overflow,
-    ] {
-        let error: &dyn core::error::Error = &refusal;
-        assert_ne!(error.to_string(), "");
+    describes(&[
+        (Refusal::NotFinite, "the sample is NaN or infinite"),
+        (Refusal::InvalidDuration, "the elapsed time is zero"),
+        (Refusal::Overflow, "a term of the calculation is not finite"),
+    ]);
+}
+
+#[test]
+fn a_negative_zero_gain_is_stored_as_zero() {
+    let gains = Gains::new(-0.0, -0.0, -0.0).expect("zero gains");
+    for gain in [gains.p(), gains.i(), gains.d()] {
+        assert!(gain.is_sign_positive(), "{gain}");
     }
+}
+
+#[test]
+fn a_saved_pid_resumes_where_it_stopped() {
+    let mut live = pid(1.0, 0.5, 0.25, -10.0, 10.0);
+    assert_eq!((live.integral(), live.previous_error()), (0.0, None));
+    let second = Duration::from_secs(1);
+    for error in [3.0, -1.5, 2.0] {
+        live.step(error, second).expect("step");
+    }
+    assert_eq!((live.integral(), live.previous_error()), (3.5, Some(2.0)));
+    let mut resumed = Pid::restored(
+        live.gains(),
+        live.limits(),
+        live.integral(),
+        live.previous_error(),
+    )
+    .expect("restored");
+    assert_eq!(resumed, live);
+    assert_eq!(resumed.step(1.0, second), live.step(1.0, second));
+    let fresh = pid(1.0, 0.5, 0.25, -10.0, 10.0);
+    let restored = Pid::restored(fresh.gains(), fresh.limits(), -0.0, None).expect("fresh");
+    assert_eq!(restored, fresh);
+    assert!(restored.integral().is_sign_positive());
+}
+
+#[test]
+fn a_saved_pid_must_be_finite() {
+    let (gains, limits) = (
+        Gains::new(1.0, 1.0, 1.0).expect("gains"),
+        Limits::new(-1.0, 1.0).expect("limits"),
+    );
+    for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert_eq!(Pid::restored(gains, limits, bad, None), None);
+        assert_eq!(Pid::restored(gains, limits, 0.0, Some(bad)), None);
+    }
+}
+
+#[test]
+fn a_saved_band_resumes_on_its_side() {
+    let limits = Limits::new(-2.0, 2.0).expect("limits");
+    let mut live = Hysteresis::new(limits);
+    assert_eq!(Hysteresis::restored(limits, live.state()), live);
+    assert_eq!(live.observe(3.0), Ok(Band::High));
+    let mut resumed = Hysteresis::restored(live.limits(), live.state());
+    assert_eq!(resumed, live);
+    assert_eq!(resumed.observe(0.0), live.observe(0.0));
+    assert_eq!(resumed.state(), Band::High);
 }

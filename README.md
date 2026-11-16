@@ -189,17 +189,30 @@ band.state           # => :low, without observing anything
 
 A non-finite reading answers `:not_finite` and the band keeps its state.
 
+## Saving and restoring
+
+A controller's whole state is its readers. Save them and resume later: the restored controller compares equal to the one it was saved from and answers every later sample the same way.
+
+```ruby
+saved = [pid.gains, pid.limits, pid.integral, pid.previous_error]
+pid   = FeedbackMachines::Pid.restored(*saved)   # previous_error is nil before the first sample
+
+band = FeedbackMachines::Hysteresis.restored(band.limits, band.state)
+```
+
+`Pid.restored` raises `RangeError` for a non-finite `integral` or `previous_error`, `TypeError` for anything but a Float or Integer (or `nil` for `previous_error`). `Hysteresis.restored` takes `:low` or `:high`.
+
 ## The Rules of the Tender
 
 - **Configuration is two values, passed positionally.** `Gains.new(p, i, d)` and `Limits.new(min, max)` mirror the core's structs, field for field. `Pid.new(gains, limits)`, `Hysteresis.new(limits)`. There are no keyword shortcuts and no default gains: say all three.
-- **A value is valid or does not exist.** `Gains` and `Limits` validate through the core's own constructors whether the gem built them or you did, `with` included. Wrong type is `TypeError`, a value the core's constructor rejects is `RangeError`. Both classes are sealed: subclassing raises `TypeError` and `allocate` is gone. That stops accidents, not reflection, so the binding checks too: `Pid.new` and `Hysteresis.new` take only instances of exactly `Gains` and `Limits` (`TypeError` otherwise, a subclass included) and run their fields through the core's constructors again (`RangeError`), so a value forged with `Data#initialize` or `Marshal` never reaches the core.
-- **Gains are finite and nonnegative.** Negative or infinite `p`, `i`, or `d` raises `RangeError` from `Gains.new`. Flip the sign of your error instead.
+- **A value is valid or does not exist.** `Gains` and `Limits` validate through the core's own constructors whether the gem built them or you did, `with` included. Wrong type is `TypeError`, a value the core's constructor rejects is `RangeError`. Both classes are sealed: subclassing raises `TypeError` and `allocate` is gone. So are `Pid` and `Hysteresis`. That stops accidents, not reflection, so the binding checks too: `Pid.new` and `Hysteresis.new` take only instances of exactly `Gains` and `Limits` (`TypeError` otherwise, a subclass included) and run their fields through the core's constructors again (`RangeError`), so a value forged with `Data#initialize` or `Marshal` never reaches the core.
+- **Gains are finite and nonnegative.** Negative or infinite `p`, `i`, or `d` raises `RangeError` from `Gains.new`. Flip the sign of your error instead. A `-0.0` gain is stored as `0.0`.
 - **Limits need `min < max`.** Equal, reversed or non-finite raises `RangeError` from `Limits.new`. Same value type for the band.
 - **`elapsed` is a span in Integer nanoseconds**, not a timestamp and not seconds: subtract two `Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond)` readings. A Float raises `TypeError`, a negative one raises `RangeError`. Zero is refused with `:invalid_duration`.
 - **Errors, gains, limits and outputs are Floats.** They are control quantities, not time. Integers are accepted and treated as floats; anything else (a `Rational`, a `BigDecimal`, an object with `to_f`) raises `TypeError`, and no `to_f` runs.
 - **A refusal is a symbol, never an exception, and changes nothing.** Not the integral, not the derivative history, not the band's side.
 - **Nothing to repeat.** Every honoured `step` is a new sample; the controller keeps no record of past calls, so feeding the same sample twice is two samples.
-- **No ids, no clock.** Nothing is issued and nothing reads the time. A controller's state lives in memory; a restart starts from zero.
+- **No ids, no clock.** Nothing is issued and nothing reads the time. A controller's state lives in memory; a restart starts from zero unless you saved it (see Saving and restoring).
 - **Frozen means frozen.** `freeze` a controller or a band and every `step` or `observe` raises `FrozenError`.
 - **Each controller is its own loop.** Two `Pid` instances share nothing, and they can't be `dup`ed or `clone`d.
 
@@ -213,8 +226,11 @@ A call that is honoured answers with a value. A call that is not honoured answer
 | `Limits.new(min, max)` | `Limits` | no clock | none; an invalid range raises `RangeError` |
 | `Pid.new(gains, limits)` | `Pid` | no clock | none |
 | `Pid#step(error, elapsed)` | `Float` within the limits | no, `elapsed` is a span | `:not_finite` (error is NaN or infinite), `:invalid_duration` (elapsed is zero), `:overflow` (a term of the calculation is not finite) |
+| `Pid.restored(gains, limits, integral, previous_error)` | `Pid` | no clock | none; a non-finite integral or previous error raises `RangeError` |
 | `Pid#gains`, `Pid#limits` | `Gains`, `Limits` | no, a query | none, a query |
+| `Pid#integral`, `Pid#previous_error` | `Float`, `Float` or `nil` | no, a query | none, a query |
 | `Hysteresis.new(limits)` | `Hysteresis`, starting `:low` | no clock | none |
+| `Hysteresis.restored(limits, state)` | `Hysteresis` on `state` | no clock | none; a non-Symbol raises `TypeError`, a Symbol other than `:low`/`:high` `RangeError` |
 | `Hysteresis#observe(value)` | `:low`, `:high` | no clock | `:not_finite` |
 | `Hysteresis#state` | `:low`, `:high` | no, a query | none, a query |
 | `Hysteresis#limits` | `Limits` | no, a query | none, a query |

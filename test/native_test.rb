@@ -174,4 +174,48 @@ class FeedbackNativeTest < Minitest::Test
       end
     end
   end
+
+  def test_gains_store_a_negative_zero_as_zero
+    gains = F::Gains.new(-0.0, -0.0, -0.0)
+    [gains.p, gains.i, gains.d].each { |gain| assert_equal Float::INFINITY, 1.0 / gain }
+  end
+
+  def test_a_saved_pid_resumes_where_it_stopped
+    live = pid(1.0, 0.5, 0.25, -10.0, 10.0)
+    assert_equal [0.0, nil], [live.integral, live.previous_error]
+    [3.0, -1.5, 2].each { |error| live.step(error, SECOND) }
+    assert_equal [3.5, 2.0], [live.integral, live.previous_error]
+    resumed = F::Pid.restored(live.gains, live.limits, live.integral, live.previous_error)
+    assert_equal [3.5, 2.0], [resumed.integral, resumed.previous_error]
+    assert_equal live.step(1.0, SECOND), resumed.step(1.0, SECOND)
+    fresh = F::Pid.restored(live.gains, live.limits, 0, nil)
+    assert_equal pid(1.0, 0.5, 0.25, -10.0, 10.0).step(4.0, SECOND), fresh.step(4.0, SECOND)
+  end
+
+  def test_a_saved_pid_is_validated
+    gains = F::Gains.new(1, 1, 1)
+    limits = F::Limits.new(-1, 1)
+    [Float::NAN, Float::INFINITY, -Float::INFINITY].each do |bad|
+      assert_raises(RangeError) { F::Pid.restored(gains, limits, bad, nil) }
+      assert_raises(RangeError) { F::Pid.restored(gains, limits, 0.0, bad) }
+    end
+    ['1', Rational(1, 2), nil].each do |bad|
+      assert_raises(TypeError) { F::Pid.restored(gains, limits, bad, nil) }
+    end
+    assert_raises(TypeError) { F::Pid.restored(gains, limits, 0.0, '1') }
+    assert_raises(TypeError) { F::Pid.restored(limits, gains, 0.0, nil) }
+  end
+
+  def test_a_saved_band_resumes_on_its_side
+    limits = F::Limits.new(-2, 2)
+    live = F::Hysteresis.new(limits)
+    assert_equal :high, live.observe(3.0)
+    resumed = F::Hysteresis.restored(live.limits, live.state)
+    assert_equal [:high, limits], [resumed.state, resumed.limits]
+    assert_equal live.observe(0.0), resumed.observe(0.0)
+    assert_equal :low, F::Hysteresis.restored(limits, :low).state
+    assert_raises(TypeError) { F::Hysteresis.restored(limits, 'high') }
+    assert_raises(RangeError) { F::Hysteresis.restored(limits, :middle) }
+    assert_raises(TypeError) { F::Hysteresis.restored(:high, limits) }
+  end
 end

@@ -106,6 +106,35 @@ impl Controller {
         Ok(Self(RefCell::new(Pid::new(gains, limits))))
     }
 
+    /// `Pid.restored(gains, limits, integral, previous_error)`: `RangeError`
+    /// where the core's `Pid::restored` answers `None`.
+    fn restored(
+        ruby: &Ruby,
+        gains: Value,
+        limits: Value,
+        integral: Value,
+        previous_error: Value,
+    ) -> Result<Self, Error> {
+        let (gains, limits) = (gains_from(ruby, gains)?, limits_from(ruby, limits)?);
+        let integral = real(integral, "integral")?;
+        let previous_error = if previous_error.is_nil() {
+            None
+        } else {
+            Some(real(previous_error, "previous_error")?)
+        };
+        let message = "integral and previous_error must be finite";
+        let pid = Pid::restored(gains, limits, integral, previous_error);
+        validated(ruby, pid, message).map(|pid| Self(RefCell::new(pid)))
+    }
+
+    fn integral(&self) -> f64 {
+        self.0.borrow().integral()
+    }
+
+    fn previous_error(&self) -> Option<f64> {
+        self.0.borrow().previous_error()
+    }
+
     fn gains(ruby: &Ruby, this: &Self) -> Result<Value, Error> {
         let gains = this.0.borrow().gains();
         let class = CLASSES.get(ruby)?.gains.get(ruby);
@@ -139,6 +168,15 @@ impl BandController {
         )?))))
     }
 
+    /// `Hysteresis.restored(limits, state)`: every side is valid for every
+    /// band, so only a non-Symbol (`TypeError`) or an unknown one
+    /// (`RangeError`) raises.
+    fn restored(ruby: &Ruby, limits: Value, state: Value) -> Result<Self, Error> {
+        let limits = limits_from(ruby, limits)?;
+        let state = Bands::parse(ruby, state)?;
+        Ok(Self(RefCell::new(Hysteresis::restored(limits, state))))
+    }
+
     fn limits(ruby: &Ruby, this: &Self) -> Result<Value, Error> {
         let limits = this.0.borrow().limits();
         limits_value(ruby, limits)
@@ -168,12 +206,16 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     let pid = module.define_class("Pid", ruby.class_object())?;
     pid.undef_default_alloc_func();
     pid.define_singleton_method("new", function!(Controller::new, 2))?;
+    pid.define_singleton_method("restored", function!(Controller::restored, 4))?;
+    pid.define_method("integral", method!(Controller::integral, 0))?;
+    pid.define_method("previous_error", method!(Controller::previous_error, 0))?;
     pid.define_method("gains", method!(Controller::gains, 0))?;
     pid.define_method("limits", method!(Controller::limits, 0))?;
     pid.define_method("step", method!(Controller::step, 2))?;
     let band = module.define_class("Hysteresis", ruby.class_object())?;
     band.undef_default_alloc_func();
     band.define_singleton_method("new", function!(BandController::new, 1))?;
+    band.define_singleton_method("restored", function!(BandController::restored, 2))?;
     band.define_method("limits", method!(BandController::limits, 0))?;
     band.define_method("state", method!(BandController::state, 0))?;
     band.define_method("observe", method!(BandController::observe, 1))

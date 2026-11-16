@@ -35,10 +35,18 @@ assert_eq!(controller.step(2.0, Duration::ZERO), Err(Refusal::InvalidDuration));
 
 - **Configuration.** `Gains::new(p, i, d)` and `Limits::new(min, max)` are
   constructors that validate and answer `None`: gains must be finite and
-  nonnegative, limits finite with `min < max`. `Pid::new(gains, limits)` and
+  nonnegative (a negative zero is stored as zero), limits finite with
+  `min < max`. `Pid::new(gains, limits)` and
   `Hysteresis::new(limits)` take validated values and cannot fail. Readers:
-  `Gains::{p, i, d}`, `Limits::{min, max}`, `Pid::{gains, limits}`,
+  `Gains::{p, i, d}`, `Limits::{min, max}`,
+  `Pid::{gains, limits, integral, previous_error}`,
   `Hysteresis::{limits, state}`.
+- **Restoring.** `Pid::restored(gains, limits, integral, previous_error)`
+  resumes a controller from its readers and answers `None` unless the integral
+  and the previous error (when present) are finite; it compares equal to the
+  controller it was saved from and steps identically.
+  `Hysteresis::restored(limits, state)` cannot fail: every side is valid for
+  every band.
 - **Refusals.** `Refusal` is the one refusal type. `Pid::step` answers
   `Result<f64, Refusal>` and `Hysteresis::observe` answers
   `Result<Band, Refusal>`; `Ok` is always an honoured sample.
@@ -64,5 +72,6 @@ assert_eq!(controller.step(2.0, Duration::ZERO), Err(Refusal::InvalidDuration));
   `unreachable!` or `expect`, and no refusal that cannot occur.
 - **Exhaustive.** `Band` and `Refusal` are exhaustive enums; a new variant is a
   breaking change.
-- **No ids.** Nothing is issued, so there are no scopes and nothing to resume.
-  A controller's state is two numbers and is not persisted for you.
+- **No ids.** Nothing is issued, so there are no scopes and no sequence to
+  resume. A controller's state is its readers, and is not persisted for you:
+  save them and pass them to `restored`.

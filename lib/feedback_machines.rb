@@ -38,4 +38,10 @@ module FeedbackMachines
     value.singleton_class.undef_method(:allocate)
     value.define_singleton_method(:inherited) { |_| raise TypeError, "#{value} cannot be subclassed" }
   end
+
+  # The controllers wrap native state and have no allocator: a subclass's
+  # `new` would build the base class anyway, so subclassing raises too.
+  [Pid, Hysteresis].each do |controller|
+    controller.define_singleton_method(:inherited) { |_| raise TypeError, "#{controller} cannot be subclassed" }
+  end
 end

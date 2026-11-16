@@ -35,14 +35,28 @@ module FeedbackMachines
                 | (min: (Float | Integer), max: (Float | Integer)) -> Limits
   end
 
-  # The core's `Pid`.
+  # The core's `Pid`. Sealed: subclassing raises TypeError, no `allocate`.
   class Pid
     # The core's `Pid::new(gains, limits)`. Raises TypeError unless given
     # instances of exactly Gains and Limits, RangeError if their fields fail
     # the core's constructors.
     def self.new: (Gains gains, Limits limits) -> Pid
+
+    # The core's `Pid::restored(gains, limits, integral, previous_error)`:
+    # resumes a controller saved through its readers. Raises TypeError for
+    # gains or limits that are not exactly Gains and Limits, or an integral
+    # or previous_error that is not a Float or Integer (previous_error may be
+    # nil), RangeError for invalid gains or limits or a non-finite integral or
+    # previous_error.
+    def self.restored: (Gains gains, Limits limits, (Float | Integer) integral, (Float | Integer)? previous_error) -> Pid
     def gains: () -> Gains
     def limits: () -> Limits
+
+    # The accumulated error-seconds the integral gain multiplies. A query.
+    def integral: () -> Float
+
+    # The error of the previous honoured sample, nil before the first. A query.
+    def previous_error: () -> Float?
 
     # The core's `Pid::step(error, elapsed)`. `elapsed` is the span since the
     # previous sample in Integer nanoseconds. Honoured: the output, a Float
@@ -55,12 +69,17 @@ module FeedbackMachines
     def step: ((Float | Integer) error, Integer elapsed) -> (Float | refusal)
   end
 
-  # The core's `Hysteresis`.
+  # The core's `Hysteresis`. Sealed like Pid.
   class Hysteresis
     # The core's `Hysteresis::new(limits)`: starts :low. Raises TypeError
     # unless given an instance of exactly Limits, RangeError if its fields
     # fail the core's constructor.
     def self.new: (Limits limits) -> Hysteresis
+
+    # The core's `Hysteresis::restored(limits, state)`: resumes a band on
+    # `state`. Raises like `new` for the limits, TypeError for a non-Symbol
+    # state, RangeError for a Symbol other than :low or :high.
+    def self.restored: (Limits limits, band state) -> Hysteresis
     def limits: () -> Limits
 
     # The side the band is on now. A query.
@@ -72,4 +91,9 @@ module FeedbackMachines
     # frozen band, before the band moves. Records no clock.
     def observe: ((Float | Integer) value) -> (band | :not_finite)
   end
+
+  # Private native hooks the Data values validate through: the checked
+  # fields, converted to Floats.
+  private def self.__gains: ((Float | Integer) p, (Float | Integer) i, (Float | Integer) d) -> [Float, Float, Float]
+  private def self.__limits: ((Float | Integer) min, (Float | Integer) max) -> [Float, Float]
 end
