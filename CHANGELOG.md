@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.0](https://github.com/seuros/feedback_machines/compare/feedback_machines/v0.5.1...feedback_machines/v0.6.0) (2026-11-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* add Pid/Hysteresis restored and seal both controllers
+
+### Features
+
+* add Pid/Hysteresis restored and seal both controllers ([c5dc3b7](https://github.com/seuros/feedback_machines/commit/c5dc3b7d97857ccd596562f6364c6918cb63b173))
+
 ## [0.5.1](https://github.com/seuros/feedback_machines/compare/feedback_machines/v0.5.0...feedback_machines/v0.5.1) (2026-11-14)
 
 
