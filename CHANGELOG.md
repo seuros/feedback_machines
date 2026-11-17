@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/seuros/feedback_machines/compare/feedback_machines/v0.6.1...feedback_machines/v0.6.2) (2026-11-17)
+
+
+### Features
+
+* Dwell, a condition that must hold continuously for a span ([ca0e3a6](https://github.com/seuros/feedback_machines/commit/ca0e3a63bc8a5e759ff514c67869af2daaa7d737))
+
 ## [0.6.1](https://github.com/seuros/feedback_machines/compare/feedback_machines/v0.6.0...feedback_machines/v0.6.1) (2026-11-16)
 
 
