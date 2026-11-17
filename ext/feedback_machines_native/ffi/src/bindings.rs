@@ -1,7 +1,9 @@
-use feedback_machines::{Band, Gains, Hysteresis, Limits, Pid, Refusal};
+use feedback_machines::{Band, Dwell, Gains, Hold, Hysteresis, Limits, Pid, Refusal};
 use magnus::typed_data::Obj;
 use magnus::{Error, IntoValue, RModule, Ruby, Symbol, Value, function, method, prelude::*};
-use matryona_machines::ruby::{Class, Registry, Symbols, duration, exact_fields, real};
+use matryona_machines::ruby::{
+    Class, Registry, Symbols, boolean, duration, exact_fields, instant, nanoseconds, real,
+};
 use std::cell::RefCell;
 
 /// The `Data` classes the binding builds and reads, resolved once at init.
@@ -36,6 +38,15 @@ matryona_machines::symbols! {
     Bands for Band as "a band" {
         Low => "low",
         High => "high",
+    }
+}
+
+matryona_machines::symbols! {
+    /// How a dwell stands, as Symbols.
+    Holds for Hold as "a hold" {
+        Interrupted => "interrupted",
+        Holding => "holding",
+        Satisfied => "satisfied",
     }
 }
 
@@ -197,6 +208,61 @@ impl BandController {
     }
 }
 
+#[magnus::wrap(class = "FeedbackMachines::Dwell", free_immediately, size)]
+struct DwellTimer(RefCell<Dwell>);
+
+impl DwellTimer {
+    fn new(max_gap: Value) -> Result<Self, Error> {
+        let max_gap = duration(max_gap, "max_gap")?;
+        Ok(Self(RefCell::new(Dwell::new(max_gap))))
+    }
+
+    /// `Dwell.restored(max_gap, held)`: `RangeError` where the core's
+    /// `Dwell::restored` answers `None`. `held` is read with the full-range
+    /// reader: the dwell can answer a span past `u64` nanoseconds.
+    fn restored(ruby: &Ruby, max_gap: Value, held: Value) -> Result<Self, Error> {
+        let max_gap = duration(max_gap, "max_gap")?;
+        let held = if held.is_nil() {
+            None
+        } else {
+            Some(instant(held, "held")?)
+        };
+        let message = "a zero max_gap never holds past zero";
+        let dwell = Dwell::restored(max_gap, held);
+        validated(ruby, dwell, message).map(|dwell| Self(RefCell::new(dwell)))
+    }
+
+    fn max_gap(ruby: &Ruby, this: &Self) -> Value {
+        nanoseconds(ruby, this.0.borrow().max_gap()).as_value()
+    }
+
+    fn held(ruby: &Ruby, this: &Self) -> Value {
+        let held = this.0.borrow().held();
+        held.map_or_else(
+            || ruby.qnil().as_value(),
+            |held| nanoseconds(ruby, held).as_value(),
+        )
+    }
+
+    fn observe(
+        ruby: &Ruby,
+        this: Obj<Self>,
+        holds: Value,
+        elapsed: Value,
+        required: Value,
+    ) -> Result<Symbol, Error> {
+        this.check_frozen()?;
+        let holds = boolean(holds, "holds")?;
+        let elapsed = duration(elapsed, "elapsed")?;
+        let required = instant(required, "required")?;
+        let outcome = this.0.borrow_mut().observe(holds, elapsed, required);
+        Ok(match outcome {
+            Ok(hold) => Holds::symbol(ruby, hold),
+            Err(refused) => Refusals::symbol(ruby, refused),
+        })
+    }
+}
+
 #[magnus::init]
 fn init(ruby: &Ruby) -> Result<(), Error> {
     let module = ruby.define_module("FeedbackMachines")?;
@@ -219,8 +285,16 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     band.define_method("limits", method!(BandController::limits, 0))?;
     band.define_method("state", method!(BandController::state, 0))?;
     band.define_method("observe", method!(BandController::observe, 1))?;
+    let dwell = module.define_class("Dwell", ruby.class_object())?;
+    dwell.undef_default_alloc_func();
+    dwell.define_singleton_method("new", function!(DwellTimer::new, 1))?;
+    dwell.define_singleton_method("restored", function!(DwellTimer::restored, 2))?;
+    dwell.define_method("max_gap", method!(DwellTimer::max_gap, 0))?;
+    dwell.define_method("held", method!(DwellTimer::held, 0))?;
+    dwell.define_method("observe", method!(DwellTimer::observe, 3))?;
     // `new` and `restored` answer these: their classes are fixed now, so
     // building a controller never runs `Object.const_get`.
     Class::pin_wrapped::<Controller>(ruby, pid)?;
-    Class::pin_wrapped::<BandController>(ruby, band).map(drop)
+    Class::pin_wrapped::<BandController>(ruby, band)?;
+    Class::pin_wrapped::<DwellTimer>(ruby, dwell).map(drop)
 }

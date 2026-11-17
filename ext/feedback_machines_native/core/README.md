@@ -18,6 +18,12 @@ Hysteresis switches high at/above its upper threshold and low at/below its lower
 threshold. It retains state inside the band. Unlike flow watermarks, these are
 generic signed floating-point measurements, not queue occupancy.
 
+Dwell answers whether a condition has held continuously for a required span.
+Each observation passes whether it holds and the span since the previous one;
+a sample where it does not hold, or a silence longer than `max_gap`, restarts
+the count. It does not latch: the requirement is per call. Hysteresis filters
+across a value band, dwell across time; compose them to debounce a threshold.
+
 ```rust
 use core::time::Duration;
 use feedback_machines::{Gains, Limits, Pid, Refusal};
@@ -40,21 +46,26 @@ assert_eq!(controller.step(2.0, Duration::ZERO), Err(Refusal::InvalidDuration));
   `Hysteresis::new(limits)` take validated values and cannot fail. Readers:
   `Gains::{p, i, d}`, `Limits::{min, max}`,
   `Pid::{gains, limits, integral, previous_error}`,
-  `Hysteresis::{limits, state}`.
+  `Hysteresis::{limits, state}`, `Dwell::{max_gap, held}`.
+  `Dwell::new(max_gap)` cannot fail.
 - **Restoring.** `Pid::restored(gains, limits, integral, previous_error)`
   resumes a controller from its readers and answers `None` unless the integral
   and the previous error (when present) are finite; it compares equal to the
   controller it was saved from and steps identically.
   `Hysteresis::restored(limits, state)` cannot fail: every side is valid for
-  every band.
+  every band. `Dwell::restored(max_gap, held)` answers `None` only for a
+  positive `held` with a zero `max_gap`: a zero gap restarts on every advance,
+  so it never holds past zero. Every other span is reachable.
 - **Refusals.** `Refusal` is the one refusal type. `Pid::step` answers
   `Result<f64, Refusal>` and `Hysteresis::observe` answers
-  `Result<Band, Refusal>`; `Ok` is always an honoured sample.
+  `Result<Band, Refusal>`, `Dwell::observe` answers `Result<Hold, Refusal>`;
+  `Ok` is always an honoured sample.
   - `NotFinite`: the sample (`error` or `value`) is NaN or infinite. Checked
     first, so a bad sample is `NotFinite` whatever the interval.
   - `InvalidDuration`: `elapsed` is zero. `step` only.
   - `Overflow`: the sample is finite but the derivative, the integral or the
-    output is not. `step` only.
+    output is not (`step`), or the dwell's held span would pass
+    `Duration::MAX` (`Dwell::observe`).
 - **A refusal changes nothing.** Not the integral, not the derivative history,
   not the band's side: the value compares equal to a clone taken before the
   call. Skip the sample and carry on.
@@ -70,7 +81,7 @@ assert_eq!(controller.step(2.0, Duration::ZERO), Err(Refusal::InvalidDuration));
   instant, and neither controller keeps one.
 - **No unreachable arms.** The crate has no `panic!`, `assert!`,
   `unreachable!` or `expect`, and no refusal that cannot occur.
-- **Exhaustive.** `Band` and `Refusal` are exhaustive enums; a new variant is a
+- **Exhaustive.** `Band`, `Hold` and `Refusal` are exhaustive enums; a new variant is a
   breaking change.
 - **No ids.** Nothing is issued, so there are no scopes and no sequence to
   resume. A controller's state is its readers, and is not persisted for you:

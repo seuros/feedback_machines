@@ -107,7 +107,10 @@ fn refusals_describe_themselves() {
     describes(&[
         (Refusal::NotFinite, "the sample is NaN or infinite"),
         (Refusal::InvalidDuration, "the elapsed time is zero"),
-        (Refusal::Overflow, "a term of the calculation is not finite"),
+        (
+            Refusal::Overflow,
+            "a term of the calculation is not finite or representable",
+        ),
     ]);
 }
 
@@ -165,4 +168,39 @@ fn a_saved_band_resumes_on_its_side() {
     assert_eq!(resumed, live);
     assert_eq!(resumed.observe(0.0), live.observe(0.0));
     assert_eq!(resumed.state(), Band::High);
+}
+
+#[test]
+fn a_dwell_counts_continuous_holding() {
+    let (gap, secs) = (Duration::from_secs(60), Duration::from_secs);
+    let mut dwell = Dwell::new(gap);
+    assert_eq!(dwell.observe(true, secs(5), secs(60)), Ok(Hold::Holding));
+    assert_eq!(dwell.held(), Some(Duration::ZERO));
+    assert_eq!(dwell.observe(true, secs(60), secs(60)), Ok(Hold::Satisfied));
+    // A longer requirement holds again: no latch.
+    assert_eq!(dwell.observe(true, secs(1), secs(120)), Ok(Hold::Holding));
+    // A silence past the gap restarts the count; so does an interruption.
+    assert_eq!(dwell.observe(true, secs(61), secs(0)), Ok(Hold::Satisfied));
+    assert_eq!(dwell.held(), Some(Duration::ZERO));
+    assert_eq!(
+        dwell.observe(false, secs(1), secs(0)),
+        Ok(Hold::Interrupted)
+    );
+    assert_eq!(dwell.held(), None);
+}
+
+#[test]
+fn a_dwell_refuses_overflow_and_resumes_from_saved_state() {
+    let mut dwell = Dwell::restored(Duration::MAX, Some(Duration::MAX)).expect("reachable");
+    let before = dwell.clone();
+    assert_eq!(
+        dwell.observe(true, Duration::from_nanos(1), Duration::ZERO),
+        Err(Refusal::Overflow)
+    );
+    assert_eq!(dwell, before);
+    // A zero gap never holds past zero.
+    assert_eq!(
+        Dwell::restored(Duration::ZERO, Some(Duration::from_nanos(1))),
+        None
+    );
 }

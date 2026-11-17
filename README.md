@@ -189,6 +189,22 @@ band.state           # => :low, without observing anything
 
 A non-finite reading answers `:not_finite` and the band keeps its state.
 
+## How the Dwell Works
+
+A band stops a reading from flapping. A dwell stops a decision from being made too early: the condition must hold continuously for a span before it counts. Tell it whether the condition holds and how long since you last looked, in Integer nanoseconds. A sample where it doesn't hold, or a silence longer than `max_gap`, starts the count over: nobody was watching, so nobody gets to assume.
+
+```ruby
+second = 1_000_000_000
+cooled = FeedbackMachines::Dwell.new(60 * second)
+
+cooled.observe(true, 30 * second, 300 * second)    # => :holding, the first look holds for zero
+cooled.observe(true, 30 * second, 300 * second)    # => :holding, 30 seconds of 300
+cooled.observe(false, 30 * second, 300 * second)   # => :interrupted, back to nothing
+cooled.held                                        # => nil
+```
+
+The requirement is per call, so a dwell never latches. Overflowing the held span answers `:overflow` and changes nothing.
+
 ## Saving and restoring
 
 A controller's whole state is its readers. Save them and resume later: the restored controller compares equal to the one it was saved from and answers every later sample the same way.
@@ -198,6 +214,8 @@ saved = [pid.gains, pid.limits, pid.integral, pid.previous_error]
 pid   = FeedbackMachines::Pid.restored(*saved)   # previous_error is nil before the first sample
 
 band = FeedbackMachines::Hysteresis.restored(band.limits, band.state)
+
+dwell = FeedbackMachines::Dwell.restored(dwell.max_gap, dwell.held)
 ```
 
 `Pid.restored` raises `RangeError` for a non-finite `integral` or `previous_error`, `TypeError` for anything but a Float or Integer (or `nil` for `previous_error`). `Hysteresis.restored` takes `:low` or `:high`.

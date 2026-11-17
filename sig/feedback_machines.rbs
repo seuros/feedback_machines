@@ -4,11 +4,15 @@ module FeedbackMachines
   # The core's `Refusal`: the call was not honoured and changed nothing.
   # :not_finite, the sample is NaN or infinite.
   # :invalid_duration, the elapsed time is zero.
-  # :overflow, the sample is finite but a term of the calculation is not.
+  # :overflow, the sample is finite but a term of the calculation is not, or
+  # a dwell's held span would pass the core's `Duration::MAX`.
   type refusal = :not_finite | :invalid_duration | :overflow
 
   # The core's `Band`.
   type band = :low | :high
+
+  # The core's `Hold`.
+  type hold = :interrupted | :holding | :satisfied
 
   # The core's `Gains`. `new` mirrors `Gains::new(p, i, d)`: it raises
   # RangeError unless every gain is finite and nonnegative, TypeError for
@@ -90,6 +94,36 @@ module FeedbackMachines
     # side. Never nil. Raises TypeError for anything but a Float or Integer, FrozenError on a
     # frozen band, before the band moves. Records no clock.
     def observe: ((Float | Integer) value) -> (band | :not_finite)
+  end
+
+  # The core's `Dwell`. Sealed like Pid. Spans are Integer nanoseconds.
+  class Dwell
+    # The core's `Dwell::new(max_gap)`: nothing held. Raises TypeError for a
+    # non-Integer, RangeError outside 0..2**64-1.
+    def self.new: (Integer max_gap) -> Dwell
+
+    # The core's `Dwell::restored(max_gap, held)`: resumes from the readers.
+    # `held` accepts any value `held` answered (0..Duration::MAX nanoseconds)
+    # or nil. Raises like `new` for max_gap, TypeError for a non-Integer
+    # held, RangeError for one out of range or a positive held with a zero
+    # max_gap (unreachable: a zero gap never holds past zero).
+    def self.restored: (Integer max_gap, Integer? held) -> Dwell
+
+    # The longest silence between observations that still counts. A query.
+    def max_gap: () -> Integer
+
+    # How long the condition has held, nil when it is not holding. A query.
+    def held: () -> Integer?
+
+    # The core's `Dwell::observe(holds, elapsed, required)`. `holds` is
+    # exactly true or false (no truthiness), `elapsed` the span since the
+    # previous observation (0..2**64-1 nanoseconds), `required` the span the
+    # condition must hold (0..Duration::MAX nanoseconds, so any `held` the
+    # dwell answered is accepted).
+    # Refused: :overflow, and the dwell keeps its count. Raises TypeError or
+    # RangeError for a bad argument, FrozenError on a frozen dwell, before it
+    # moves. Records no clock.
+    def observe: (bool holds, Integer elapsed, Integer required) -> (hold | :overflow)
   end
 
   # Private native hooks the Data values validate through: the checked

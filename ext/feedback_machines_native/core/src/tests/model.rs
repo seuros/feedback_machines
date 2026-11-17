@@ -1,5 +1,5 @@
 //! Randomized comparison against a spelled-out reference controller.
-use crate::{Band, Gains, Hysteresis, Limits, Pid, Refusal};
+use crate::{Band, Dwell, Gains, Hysteresis, Limits, Pid, Refusal};
 use core::time::Duration;
 use matryona_machines::testing::SplitMix64;
 
@@ -140,6 +140,26 @@ fn random_measurements_match_the_reference_band() {
                 assert_eq!(answer, Ok(if high { Band::High } else { Band::Low }));
             }
             assert_eq!(band.state() == Band::High, high);
+        }
+    }
+}
+
+#[test]
+fn every_reached_dwell_restores() {
+    let mut draws = Draws::new(1612);
+    for _ in 0..300 {
+        let max_gap = match draws.below(4) {
+            0 => Duration::ZERO,
+            _ => Duration::from_millis(draws.below(3_000)),
+        };
+        let mut dwell = Dwell::new(max_gap);
+        for _ in 0..200 {
+            let (holds, elapsed) = (draws.below(5) != 0, draws.elapsed());
+            let _ = dwell.observe(holds, elapsed, Duration::from_secs(2));
+            assert_eq!(
+                Dwell::restored(max_gap, dwell.held()).as_ref(),
+                Some(&dwell)
+            );
         }
     }
 }

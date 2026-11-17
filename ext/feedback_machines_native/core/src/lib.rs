@@ -11,7 +11,8 @@ pub enum Refusal {
     NotFinite,
     /// The elapsed time is zero: no interval to integrate or differentiate over.
     InvalidDuration,
-    /// The sample is finite but a term of the calculation is not.
+    /// The sample is finite but a term of the calculation is not, or a
+    /// dwell's held span would pass `Duration::MAX`.
     Overflow,
 }
 
@@ -20,7 +21,7 @@ impl fmt::Display for Refusal {
         f.write_str(match self {
             Self::NotFinite => "the sample is NaN or infinite",
             Self::InvalidDuration => "the elapsed time is zero",
-            Self::Overflow => "a term of the calculation is not finite",
+            Self::Overflow => "a term of the calculation is not finite or representable",
         })
     }
 }
@@ -281,6 +282,98 @@ impl Hysteresis {
             self.state = Band::Low;
         }
         Ok(self.state)
+    }
+}
+
+/// A condition that must hold continuously for a span before it counts.
+///
+/// Each observation says whether the condition holds now and how long since
+/// the previous one. A sample where it does not hold, or a silence longer than
+/// `max_gap`, restarts the count: nobody was watching, so continuity is not
+/// assumed. The first holding sample after a restart has held for zero.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Dwell {
+    max_gap: Duration,
+    held: Option<Duration>,
+}
+
+/// How a dwell stands after an observation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hold {
+    /// The condition does not hold; the count is cleared.
+    Interrupted,
+    /// The condition holds, for less than the required span.
+    Holding,
+    /// The condition has held for at least the required span.
+    Satisfied,
+}
+
+impl Dwell {
+    /// Start with nothing held. `max_gap` is the longest silence between
+    /// observations that still counts as continuous.
+    #[must_use]
+    pub const fn new(max_gap: Duration) -> Self {
+        Self {
+            max_gap,
+            held: None,
+        }
+    }
+
+    /// A dwell resuming saved state: `held`, the [`Dwell::held`] read from
+    /// one before it was put away. `None` for the one unreachable state: a
+    /// zero `max_gap` restarts on every advance, so it never holds past zero.
+    #[must_use]
+    pub const fn restored(max_gap: Duration, held: Option<Duration>) -> Option<Self> {
+        match held {
+            Some(span) if max_gap.is_zero() && !span.is_zero() => None,
+            _ => Some(Self { max_gap, held }),
+        }
+    }
+
+    /// The longest silence that still counts as continuous.
+    #[must_use]
+    pub const fn max_gap(&self) -> Duration {
+        self.max_gap
+    }
+
+    /// How long the condition has held, or `None` when it is not holding.
+    #[must_use]
+    pub const fn held(&self) -> Option<Duration> {
+        self.held
+    }
+
+    /// Observe the condition `elapsed` after the previous observation and
+    /// answer whether it has held for `required`. `required` is per call, so
+    /// a later, longer requirement can answer [`Hold::Holding`] again: a dwell
+    /// does not latch. `elapsed` is ignored on the first observation and
+    /// whenever the condition does not hold.
+    ///
+    /// # Errors
+    ///
+    /// [`Refusal::Overflow`] when the held span would pass `Duration::MAX`;
+    /// the dwell keeps its count.
+    pub fn observe(
+        &mut self,
+        holds: bool,
+        elapsed: Duration,
+        required: Duration,
+    ) -> Result<Hold, Refusal> {
+        if !holds {
+            self.held = None;
+            return Ok(Hold::Interrupted);
+        }
+        let held = match self.held {
+            Some(held) if elapsed <= self.max_gap => {
+                held.checked_add(elapsed).ok_or(Refusal::Overflow)?
+            }
+            _ => Duration::ZERO,
+        };
+        self.held = Some(held);
+        Ok(if held >= required {
+            Hold::Satisfied
+        } else {
+            Hold::Holding
+        })
     }
 }
 

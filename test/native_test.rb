@@ -218,4 +218,19 @@ class FeedbackNativeTest < Minitest::Test
     assert_raises(RangeError) { F::Hysteresis.restored(limits, :middle) }
     assert_raises(TypeError) { F::Hysteresis.restored(:high, limits) }
   end
+
+  def test_dwell_counts_continuous_holding_in_nanoseconds
+    second = 1_000_000_000
+    dwell = F::Dwell.new(60 * second)
+    assert_equal :holding, dwell.observe(true, 0, 30 * second)
+    assert_equal :satisfied, dwell.observe(true, 30 * second, 30 * second)
+    assert_equal 30 * second, dwell.held
+    assert_equal :interrupted, dwell.observe(false, 0, 0)
+    assert_nil dwell.held
+    assert_raises(TypeError) { dwell.observe(nil, 0, 0) }
+    assert_raises(FrozenError) { dwell.freeze.observe(true, 0, 0) }
+    saved = F::Dwell.restored(60 * second, 2**80)
+    assert_equal [2**80, 60 * second], [saved.held, saved.max_gap]
+    assert_raises(RangeError) { F::Dwell.restored(0, 1) }
+  end
 end
