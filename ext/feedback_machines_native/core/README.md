@@ -15,8 +15,11 @@ auto-tuning, or stability guarantee. Gains must be finite and nonnegative;
 reverse the error convention for inverse-action systems.
 
 Hysteresis switches high at/above its upper threshold and low at/below its lower
-threshold. It retains state inside the band. Unlike flow watermarks, these are
-generic signed floating-point measurements, not queue occupancy.
+threshold. It retains state inside the band. Equal thresholds are a band with
+no deadband: it switches on the threshold itself, high at or above it, low
+below. Measurements are `f64`, or an unsigned integer (`u8` to `u128`,
+`usize`) compared exactly, so a byte count past 2^53 never rounds. Unlike flow
+watermarks, these are generic measurements, not queue occupancy.
 
 Dwell answers whether a condition has held continuously for a required span.
 Each observation passes whether it holds and the span since the previous one;
@@ -39,28 +42,33 @@ assert_eq!(controller.step(2.0, Duration::ZERO), Err(Refusal::InvalidDuration));
 
 ## Contract
 
-- **Configuration.** `Gains::new(p, i, d)` and `Limits::new(min, max)` are
-  constructors that validate and answer `None`: gains must be finite and
-  nonnegative (a negative zero is stored as zero), limits finite with
-  `min < max`. `Pid::new(gains, limits)` and
-  `Hysteresis::new(limits)` take validated values and cannot fail. Readers:
-  `Gains::{p, i, d}`, `Limits::{min, max}`,
+- **Configuration.** `Gains::new(p, i, d)`, `Limits::new(min, max)` and
+  `Thresholds::new(low, high)` are constructors that validate and answer
+  `None`: gains must be finite and nonnegative (a negative zero is stored as
+  zero), limits finite with `min < max`, thresholds `low <= high` (finite, for
+  `f64`). `Pid::new(gains, limits)` and `Hysteresis::new(thresholds)` take
+  validated values and cannot fail. Readers: `Gains::{p, i, d}`,
+  `Limits::{min, max}`, `Thresholds::{low, high}`,
   `Pid::{gains, limits, integral, previous_error}`,
-  `Hysteresis::{limits, state}`, `Dwell::{max_gap, held}`.
+  `Hysteresis::{thresholds, state}`, `Dwell::{max_gap, held}`.
+- **Measurements.** `Hysteresis<T>` and `Thresholds<T>` are generic over the
+  sealed `Level` trait, `f64` by default and implemented for the unsigned
+  integers. `Level::Refused` is `Refusal` for `f64` and `Infallible` for the
+  integers: an integer band never refuses, so `let Ok(band) = h.observe(n);`.
   `Dwell::new(max_gap)` cannot fail.
 - **Restoring.** `Pid::restored(gains, limits, integral, previous_error)`
   resumes a controller from its readers and answers `None` unless the integral
   and the previous error (when present) are finite; it compares equal to the
   controller it was saved from and steps identically.
-  `Hysteresis::restored(limits, state)` cannot fail: every side is valid for
+  `Hysteresis::restored(thresholds, state)` cannot fail: every side is valid for
   every band. `Dwell::restored(max_gap, held)` answers `None` only for a
   positive `held` with a zero `max_gap`: a zero gap restarts on every advance,
   so it never holds past zero. Every other span is reachable.
 - **Refusals.** `Refusal` is the one refusal type. `Pid::step` answers
   `Result<f64, Refusal>` and `Hysteresis::observe` answers
-  `Result<Band, Refusal>`, `Dwell::observe` answers `Result<Hold, Refusal>`;
+  `Result<Band, T::Refused>`, `Dwell::observe` answers `Result<Hold, Refusal>`;
   `Ok` is always an honoured sample.
-  - `NotFinite`: the sample (`error` or `value`) is NaN or infinite. Checked
+  - `NotFinite`: the sample (`error` or an `f64` `value`) is NaN or infinite. Checked
     first, so a bad sample is `NotFinite` whatever the interval.
   - `InvalidDuration`: `elapsed` is zero. `step` only.
   - `Overflow`: the sample is finite but the derivative, the integral or the
@@ -75,7 +83,8 @@ assert_eq!(controller.step(2.0, Duration::ZERO), Err(Refusal::InvalidDuration));
   measurement twice is simply two observations with the same answer.
 - **Time.** `elapsed` is a `core::time::Duration`: the span since the previous
   sample, not an instant. The controllers read no clock and keep none. `error`,
-  the gains, the limits and the output are `f64` control quantities, not time.
+  the gains, the limits, the thresholds and the output are control
+  quantities, not time.
 - **No recorded clock.** The rule "an honoured call records `now` exactly when
   its answer depends on `now`" has nothing to act on here: no method takes an
   instant, and neither controller keeps one.

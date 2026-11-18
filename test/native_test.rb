@@ -50,7 +50,7 @@ class FeedbackNativeTest < Minitest::Test
     assert_raises(TypeError) { pid.step(3.0, 1.5) }
     assert_raises(RangeError) { pid.step(3.0, -1) }
     5.times { assert_equal twin.step(3.0, SECOND / 4), pid.step(3.0, SECOND / 4) }
-    band = F::Hysteresis.new(F::Limits.new(0, 10))
+    band = F::Hysteresis.new(F::Thresholds.new(0, 10))
     assert_raises(TypeError) { band.observe('11') }
     assert_equal :low, band.state
   end
@@ -66,13 +66,16 @@ class FeedbackNativeTest < Minitest::Test
     pid = F::Pid.new(gains, limits)
     assert_equal gains, pid.gains
     assert_equal limits, pid.limits
-    assert_equal limits, F::Hysteresis.new(limits).limits
+    thresholds = F::Thresholds.new(-1, 1)
+    assert_equal %i[low high], F::Thresholds.members
+    assert_equal thresholds, F::Hysteresis.new(thresholds).thresholds
     assert_raises(ArgumentError) { F::Gains.new(1.0) }
     assert_raises(ArgumentError) { F::Pid.new(gains) }
     assert_raises(ArgumentError) { F::Pid.new(p: 1.0, min: 0.0, max: 1.0) }
     assert_raises(TypeError) { F::Pid.new([1.0, 0.0, 0.0], limits) }
     assert_raises(TypeError) { F::Pid.new(limits, gains) }
     assert_raises(TypeError) { F::Hysteresis.new(gains) }
+    assert_raises(TypeError) { F::Hysteresis.new(limits) }
     assert_raises(TypeError) { F::Pid.allocate }
     assert_raises(NoMethodError) { F.__gains(1.0, 0.0, 0.0) }
   end
@@ -84,6 +87,10 @@ class FeedbackNativeTest < Minitest::Test
     [[1.0, 1.0], [2.0, 1.0], [-Float::INFINITY, 0.0], [0.0, Float::NAN]].each do |min, max|
       assert_raises(RangeError) { F::Limits.new(min, max) }
     end
+    [[2.0, 1.0], [-Float::INFINITY, 0.0], [0.0, Float::NAN]].each do |low, high|
+      assert_raises(RangeError) { F::Thresholds.new(low, high) }
+    end
+    assert_raises(TypeError) { F::Thresholds.new(0.0, '1') }
     assert_raises(TypeError) { F::Gains.new(nil, 0.0, 0.0) }
     assert_raises(TypeError) { F::Gains.new('1', 0.0, 0.0) }
     assert_raises(TypeError) { F::Limits.new(0.0, nil) }
@@ -94,11 +101,12 @@ class FeedbackNativeTest < Minitest::Test
     floatish = Object.new
     def floatish.to_f = 1.0
     pid = pid(1.0, 0.0, 0.0, -10.0, 10.0)
-    band = F::Hysteresis.new(F::Limits.new(0.0, 1.0))
+    band = F::Hysteresis.new(F::Thresholds.new(0.0, 1.0))
     [Rational(1, 2), floatish, 1i].each do |invalid|
       assert_equal 'p must be a Float or Integer', assert_raises(TypeError) { F::Gains.new(invalid, 0, 0) }.message
       assert_equal 'd must be a Float or Integer', assert_raises(TypeError) { F::Gains.new(0, 0, invalid) }.message
       assert_equal 'max must be a Float or Integer', assert_raises(TypeError) { F::Limits.new(0, invalid) }.message
+      assert_equal 'high must be a Float or Integer', assert_raises(TypeError) { F::Thresholds.new(0, invalid) }.message
       assert_equal 'error must be a Float or Integer', assert_raises(TypeError) { pid.step(invalid, SECOND) }.message
       assert_equal 'value must be a Float or Integer', assert_raises(TypeError) { band.observe(invalid) }.message
     end
@@ -119,7 +127,7 @@ class FeedbackNativeTest < Minitest::Test
   end
 
   def test_hysteresis_retains_state_between_thresholds
-    band = F::Hysteresis.new(F::Limits.new(2.0, 5.0))
+    band = F::Hysteresis.new(F::Thresholds.new(2.0, 5.0))
     assert_equal :low, band.state
     assert_equal :low, band.observe(3.0)
     assert_equal :high, band.observe(5.0)
@@ -133,13 +141,20 @@ class FeedbackNativeTest < Minitest::Test
     assert_raises(TypeError) { band.observe(nil) }
   end
 
+  def test_equal_thresholds_switch_on_the_threshold_itself
+    band = F::Hysteresis.new(F::Thresholds.new(5, 5))
+    [[4.999, :low], [5, :high], [5.001, :high], [5.0, :high], [4.999, :low], [5.0, :high]].each do |value, side|
+      assert_equal side, band.observe(value), value
+    end
+  end
+
   def test_freezing
     pid = pid(1.0, 0.0, 0.0, 0.0, 1.0).freeze
     assert_raises(FrozenError) { pid.step(1.0, SECOND) }
     # Frozen is checked first, before the arguments are read.
     assert_raises(FrozenError) { pid.step('1', 0.5) }
     assert_equal 1.0, pid.gains.p
-    band = F::Hysteresis.new(F::Limits.new(0.0, 1.0)).freeze
+    band = F::Hysteresis.new(F::Thresholds.new(0.0, 1.0)).freeze
     assert_raises(FrozenError) { band.observe(1.0) }
     assert_raises(FrozenError) { band.observe(nil) }
     assert_equal :low, band.state
@@ -207,16 +222,16 @@ class FeedbackNativeTest < Minitest::Test
   end
 
   def test_a_saved_band_resumes_on_its_side
-    limits = F::Limits.new(-2, 2)
-    live = F::Hysteresis.new(limits)
+    thresholds = F::Thresholds.new(-2, 2)
+    live = F::Hysteresis.new(thresholds)
     assert_equal :high, live.observe(3.0)
-    resumed = F::Hysteresis.restored(live.limits, live.state)
-    assert_equal [:high, limits], [resumed.state, resumed.limits]
+    resumed = F::Hysteresis.restored(live.thresholds, live.state)
+    assert_equal [:high, thresholds], [resumed.state, resumed.thresholds]
     assert_equal live.observe(0.0), resumed.observe(0.0)
-    assert_equal :low, F::Hysteresis.restored(limits, :low).state
-    assert_raises(TypeError) { F::Hysteresis.restored(limits, 'high') }
-    assert_raises(RangeError) { F::Hysteresis.restored(limits, :middle) }
-    assert_raises(TypeError) { F::Hysteresis.restored(:high, limits) }
+    assert_equal :low, F::Hysteresis.restored(thresholds, :low).state
+    assert_raises(TypeError) { F::Hysteresis.restored(thresholds, 'high') }
+    assert_raises(RangeError) { F::Hysteresis.restored(thresholds, :middle) }
+    assert_raises(TypeError) { F::Hysteresis.restored(:high, thresholds) }
   end
 
   def test_dwell_counts_continuous_holding_in_nanoseconds

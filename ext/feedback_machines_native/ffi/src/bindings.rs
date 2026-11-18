@@ -1,4 +1,4 @@
-use feedback_machines::{Band, Dwell, Gains, Hold, Hysteresis, Limits, Pid, Refusal};
+use feedback_machines::{Band, Dwell, Gains, Hold, Hysteresis, Limits, Pid, Refusal, Thresholds};
 use magnus::typed_data::Obj;
 use magnus::{Error, IntoValue, RModule, Ruby, Symbol, Value, function, method, prelude::*};
 use matryona_machines::ruby::{
@@ -10,6 +10,7 @@ use std::cell::RefCell;
 struct Classes {
     gains: Class,
     limits: Class,
+    thresholds: Class,
 }
 
 static CLASSES: Registry<Classes> = Registry::new("feedback_machines");
@@ -20,6 +21,7 @@ fn resolve(ruby: &Ruby, module: RModule) -> Result<(), Error> {
     let classes = Classes {
         gains: Class::resolve(ruby, module, "Gains")?,
         limits: Class::resolve(ruby, module, "Limits")?,
+        thresholds: Class::resolve(ruby, module, "Thresholds")?,
     };
     CLASSES.set(ruby, classes).map(drop)
 }
@@ -71,6 +73,13 @@ fn limits(ruby: &Ruby, min: Value, max: Value) -> Result<Limits, Error> {
     validated(ruby, Limits::new(min, max), message)
 }
 
+/// The core's `Thresholds` of two reals, read like [`gains`].
+fn thresholds(ruby: &Ruby, low: Value, high: Value) -> Result<Thresholds, Error> {
+    let (low, high) = (real(low, "low")?, real(high, "high")?);
+    let message = "thresholds must be finite and low <= high";
+    validated(ruby, Thresholds::new(low, high), message)
+}
+
 /// The core's `Gains` of a `FeedbackMachines::Gains`: `TypeError` for
 /// anything but an instance of exactly that class, its members read from the
 /// struct itself (no reader runs) and re-validated through `Gains::new`, so a
@@ -91,6 +100,15 @@ fn limits_from(ruby: &Ruby, value: Value) -> Result<Limits, Error> {
     limits(ruby, min, max)
 }
 
+/// The core's `Thresholds` of a `FeedbackMachines::Thresholds`, checked like
+/// [`gains_from`].
+fn thresholds_from(ruby: &Ruby, value: Value) -> Result<Thresholds, Error> {
+    let class = CLASSES.get(ruby)?.thresholds.get(ruby);
+    let message = "thresholds must be a FeedbackMachines::Thresholds";
+    let [low, high] = exact_fields::<2>(ruby, value, class, message)?;
+    thresholds(ruby, low, high)
+}
+
 /// A `FeedbackMachines::Limits` for `limits`. Callers copy the limits out
 /// first: no borrow is held while `Limits.new` runs.
 fn limits_value(ruby: &Ruby, limits: Limits) -> Result<Value, Error> {
@@ -106,6 +124,11 @@ fn checked_gains(ruby: &Ruby, p: Value, i: Value, d: Value) -> Result<(f64, f64,
 /// What `Limits.new` stores: the validated range as Floats.
 fn checked_limits(ruby: &Ruby, min: Value, max: Value) -> Result<(f64, f64), Error> {
     limits(ruby, min, max).map(|limits| (limits.min(), limits.max()))
+}
+
+/// What `Thresholds.new` stores: the validated band as Floats.
+fn checked_thresholds(ruby: &Ruby, low: Value, high: Value) -> Result<(f64, f64), Error> {
+    thresholds(ruby, low, high).map(|thresholds| (thresholds.low(), thresholds.high()))
 }
 
 #[magnus::wrap(class = "FeedbackMachines::Pid", free_immediately, size)]
@@ -173,24 +196,26 @@ impl Controller {
 struct BandController(RefCell<Hysteresis>);
 
 impl BandController {
-    fn new(ruby: &Ruby, limits: Value) -> Result<Self, Error> {
-        Ok(Self(RefCell::new(Hysteresis::new(limits_from(
-            ruby, limits,
-        )?))))
+    fn new(ruby: &Ruby, thresholds: Value) -> Result<Self, Error> {
+        let thresholds = thresholds_from(ruby, thresholds)?;
+        Ok(Self(RefCell::new(Hysteresis::new(thresholds))))
     }
 
-    /// `Hysteresis.restored(limits, state)`: every side is valid for every
-    /// band, so only a non-Symbol (`TypeError`) or an unknown one
+    /// `Hysteresis.restored(thresholds, state)`: every side is valid for
+    /// every band, so only a non-Symbol (`TypeError`) or an unknown one
     /// (`RangeError`) raises.
-    fn restored(ruby: &Ruby, limits: Value, state: Value) -> Result<Self, Error> {
-        let limits = limits_from(ruby, limits)?;
+    fn restored(ruby: &Ruby, thresholds: Value, state: Value) -> Result<Self, Error> {
+        let thresholds = thresholds_from(ruby, thresholds)?;
         let state = Bands::parse(ruby, state)?;
-        Ok(Self(RefCell::new(Hysteresis::restored(limits, state))))
+        Ok(Self(RefCell::new(Hysteresis::restored(thresholds, state))))
     }
 
-    fn limits(ruby: &Ruby, this: &Self) -> Result<Value, Error> {
-        let limits = this.0.borrow().limits();
-        limits_value(ruby, limits)
+    /// A `FeedbackMachines::Thresholds` for the band's thresholds, copied out
+    /// first: no borrow is held while `Thresholds.new` runs.
+    fn thresholds(ruby: &Ruby, this: &Self) -> Result<Value, Error> {
+        let thresholds = this.0.borrow().thresholds();
+        let class = CLASSES.get(ruby)?.thresholds.get(ruby);
+        class.funcall("new", (thresholds.low(), thresholds.high()))
     }
 
     fn state(ruby: &Ruby, this: &Self) -> Symbol {
@@ -269,6 +294,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     resolve(ruby, module)?;
     module.define_singleton_method("__gains", function!(checked_gains, 3))?;
     module.define_singleton_method("__limits", function!(checked_limits, 2))?;
+    module.define_singleton_method("__thresholds", function!(checked_thresholds, 2))?;
     let pid = module.define_class("Pid", ruby.class_object())?;
     pid.undef_default_alloc_func();
     pid.define_singleton_method("new", function!(Controller::new, 2))?;
@@ -282,7 +308,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     band.undef_default_alloc_func();
     band.define_singleton_method("new", function!(BandController::new, 1))?;
     band.define_singleton_method("restored", function!(BandController::restored, 2))?;
-    band.define_method("limits", method!(BandController::limits, 0))?;
+    band.define_method("thresholds", method!(BandController::thresholds, 0))?;
     band.define_method("state", method!(BandController::state, 0))?;
     band.define_method("observe", method!(BandController::observe, 1))?;
     let dwell = module.define_class("Dwell", ruby.class_object())?;

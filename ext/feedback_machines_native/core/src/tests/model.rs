@@ -1,5 +1,5 @@
 //! Randomized comparison against a spelled-out reference controller.
-use crate::{Band, Dwell, Gains, Hysteresis, Limits, Pid, Refusal};
+use crate::{Band, Dwell, Gains, Hysteresis, Limits, Pid, Refusal, Thresholds};
 use core::time::Duration;
 use matryona_machines::testing::SplitMix64;
 
@@ -125,8 +125,11 @@ fn random_measurements_match_the_reference_band() {
     let mut draws = Draws::new(1865);
     for _ in 0..300 {
         let min = draws.signed(10.0);
-        let max = min + 0.5 + draws.signed(10.0).abs();
-        let mut band = Hysteresis::new(Limits::new(min, max).expect("limits"));
+        let max = match draws.below(4) {
+            0 => min,
+            _ => min + 0.5 + draws.signed(10.0).abs(),
+        };
+        let mut band = Hysteresis::new(Thresholds::new(min, max).expect("thresholds"));
         let mut high = false;
         for _ in 0..200 {
             let value = draws.sample();
@@ -136,10 +139,31 @@ fn random_measurements_match_the_reference_band() {
                 assert_eq!(answer, Err(Refusal::NotFinite));
                 assert_eq!(band, before);
             } else {
-                high = if high { value > min } else { value >= max };
+                high = value >= max || (high && value > min);
                 assert_eq!(answer, Ok(if high { Band::High } else { Band::Low }));
             }
             assert_eq!(band.state() == Band::High, high);
+        }
+    }
+}
+
+#[test]
+fn random_exact_measurements_match_the_reference_band() {
+    let mut draws = Draws::new(2053);
+    let base = u128::MAX - (1 << 60);
+    let near = |draws: &mut Draws| base + u128::from(draws.below(64));
+    for _ in 0..300 {
+        let low = near(&mut draws);
+        let high = low + u128::from(draws.below(4));
+        let mut band = Hysteresis::new(Thresholds::new(low, high).expect("thresholds"));
+        let mut up = false;
+        for _ in 0..200 {
+            let value = near(&mut draws);
+            up = value >= high || (up && value > low);
+            assert_eq!(
+                band.observe(value),
+                Ok(if up { Band::High } else { Band::Low })
+            );
         }
     }
 }

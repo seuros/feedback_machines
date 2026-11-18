@@ -18,6 +18,7 @@ class ClassLookupTest < Minitest::Test
     Hysteresis = F::Hysteresis
     gains = F::Gains.new(1.0, 0.0, 0.0)
     limits = F::Limits.new(-10.0, 10.0)
+    thresholds = F::Thresholds.new(-10.0, 10.0)
   RUBY
 
   # Runs `body` after PRELUDE in a new Ruby; answers its last line of output.
@@ -44,8 +45,8 @@ class ClassLookupTest < Minitest::Test
     assert_equal 'true true high high', isolated(<<~RUBY)
       F.send(:remove_const, :Hysteresis)
       F.const_set(:Hysteresis, Class.new)
-      band = Hysteresis.new(limits)
-      restored = Hysteresis.restored(limits, :high)
+      band = Hysteresis.new(thresholds)
+      restored = Hysteresis.restored(thresholds, :high)
       puts [band.instance_of?(Hysteresis), restored.instance_of?(Hysteresis),
             band.observe(20.0), restored.state].join(' ')
     RUBY
@@ -61,7 +62,7 @@ class ClassLookupTest < Minitest::Test
         super(*args)
       end
       pid = Pid.new(gains, limits)
-      band = Hysteresis.new(limits)
+      band = Hysteresis.new(thresholds)
       puts [hits, pid.class.name.split('::').last, band.class.name.split('::').last].join(' ')
     RUBY
   end
@@ -72,7 +73,7 @@ class ClassLookupTest < Minitest::Test
     assert_equal '5.0 high', isolated(<<~RUBY)
       Object.define_singleton_method(:const_get) { |*| raise IOError, 'lookup ran in a native call' }
       pid = Pid.new(gains, limits)
-      band = Hysteresis.new(limits)
+      band = Hysteresis.new(thresholds)
       puts [pid.step(5.0, 1), band.observe(20.0)].join(' ')
     RUBY
   end

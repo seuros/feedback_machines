@@ -220,10 +220,92 @@ impl Pid {
     }
 }
 
-/// A generic two-state hysteresis band.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Hysteresis {
-    limits: Limits,
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// A measurement type a [`Hysteresis`] band compares: `f64`, or an unsigned
+/// integer compared exactly. Sealed.
+pub trait Level: Copy + PartialOrd + sealed::Sealed {
+    /// Why a measurement can be refused: [`Refusal`] for `f64`,
+    /// [`core::convert::Infallible`] for the integers, which are always
+    /// measurements.
+    type Refused;
+
+    /// `self` as a measurement, or why it is not one.
+    ///
+    /// # Errors
+    ///
+    /// [`Refusal::NotFinite`] for a NaN or infinite `f64`.
+    fn measured(self) -> Result<Self, Self::Refused>;
+}
+
+impl sealed::Sealed for f64 {}
+
+impl Level for f64 {
+    type Refused = Refusal;
+
+    fn measured(self) -> Result<Self, Refusal> {
+        if self.is_finite() {
+            Ok(self)
+        } else {
+            Err(Refusal::NotFinite)
+        }
+    }
+}
+
+macro_rules! exact_levels {
+    ($($integer:ty),+) => {$(
+        impl sealed::Sealed for $integer {}
+
+        impl Level for $integer {
+            type Refused = core::convert::Infallible;
+
+            fn measured(self) -> Result<Self, Self::Refused> {
+                Ok(self)
+            }
+        }
+    )+};
+}
+
+exact_levels!(u8, u16, u32, u64, u128, usize);
+
+/// The two thresholds of a [`Hysteresis`] band, `low <= high`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Thresholds<T: Level = f64> {
+    low: T,
+    high: T,
+}
+
+impl<T: Level> Thresholds<T> {
+    /// Validate a band: `None` unless `low <= high`, both measurements (finite,
+    /// for `f64`). Equal thresholds are a band with no deadband, a plain
+    /// threshold: at or above it is [`Band::High`], below it [`Band::Low`].
+    #[must_use]
+    pub fn new(low: T, high: T) -> Option<Self> {
+        match (low.measured(), high.measured()) {
+            (Ok(low), Ok(high)) if low <= high => Some(Self { low, high }),
+            _ => None,
+        }
+    }
+
+    /// At or below this, the band switches low.
+    #[must_use]
+    pub const fn low(&self) -> T {
+        self.low
+    }
+
+    /// At or above this, the band switches high.
+    #[must_use]
+    pub const fn high(&self) -> T {
+        self.high
+    }
+}
+
+/// A generic two-state hysteresis band over a [`Level`] measurement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hysteresis<T: Level = f64> {
+    thresholds: Thresholds<T>,
     state: Band,
 }
 
@@ -236,12 +318,12 @@ pub enum Band {
     High,
 }
 
-impl Hysteresis {
+impl<T: Level> Hysteresis<T> {
     /// Start on the low side.
     #[must_use]
-    pub const fn new(limits: Limits) -> Self {
+    pub const fn new(thresholds: Thresholds<T>) -> Self {
         Self {
-            limits,
+            thresholds,
             state: Band::Low,
         }
     }
@@ -250,14 +332,14 @@ impl Hysteresis {
     /// read from one before it was put away. Every side is valid for every
     /// band.
     #[must_use]
-    pub const fn restored(limits: Limits, state: Band) -> Self {
-        Self { limits, state }
+    pub const fn restored(thresholds: Thresholds<T>, state: Band) -> Self {
+        Self { thresholds, state }
     }
 
     /// The thresholds this band was built with.
     #[must_use]
-    pub const fn limits(&self) -> Limits {
-        self.limits
+    pub const fn thresholds(&self) -> Thresholds<T> {
+        self.thresholds
     }
 
     /// The side the band is on now.
@@ -270,15 +352,13 @@ impl Hysteresis {
     ///
     /// # Errors
     ///
-    /// [`Refusal::NotFinite`] for a NaN or infinite `value`; the band keeps
-    /// its side.
-    pub fn observe(&mut self, value: f64) -> Result<Band, Refusal> {
-        if !value.is_finite() {
-            return Err(Refusal::NotFinite);
-        }
-        if value >= self.limits.max {
+    /// [`Refusal::NotFinite`] for a NaN or infinite `f64` `value`; the band
+    /// keeps its side. An integer band never refuses.
+    pub fn observe(&mut self, value: T) -> Result<Band, T::Refused> {
+        let value = value.measured()?;
+        if value >= self.thresholds.high {
             self.state = Band::High;
-        } else if value <= self.limits.min {
+        } else if value <= self.thresholds.low {
             self.state = Band::Low;
         }
         Ok(self.state)

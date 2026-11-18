@@ -89,9 +89,10 @@ fn every_pid_refusal_names_its_reason_and_changes_nothing() {
 
 #[test]
 fn hysteresis_retains_state_within_the_band() {
-    let limits = Limits::new(-2.0, 2.0).expect("limits");
-    let mut band = Hysteresis::new(limits);
-    assert_eq!((band.state(), band.limits()), (Band::Low, limits));
+    let thresholds = Thresholds::new(-2.0, 2.0).expect("thresholds");
+    let mut band = Hysteresis::new(thresholds);
+    assert_eq!((band.state(), band.thresholds()), (Band::Low, thresholds));
+    assert_eq!((thresholds.low(), thresholds.high()), (-2.0, 2.0));
     assert_eq!(band.observe(2.0), Ok(Band::High));
     assert_eq!(band.observe(0.0), Ok(Band::High));
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
@@ -100,6 +101,68 @@ fn hysteresis_retains_state_within_the_band() {
     assert_eq!(band.state(), Band::High);
     assert_eq!(band.observe(-2.0), Ok(Band::Low));
     assert_eq!(band.state(), Band::Low);
+}
+
+#[test]
+fn thresholds_are_validated_and_may_be_equal() {
+    for (low, high) in [
+        (2.0, 1.0),
+        (f64::NEG_INFINITY, 1.0),
+        (0.0, f64::INFINITY),
+        (f64::NAN, f64::NAN),
+    ] {
+        assert_eq!(Thresholds::new(low, high), None, "{low} {high}");
+    }
+    assert_eq!(Thresholds::new(2_u64, 1), None);
+    assert!(Thresholds::new(1.0, 1.0).is_some());
+    assert!(Thresholds::new(u128::MAX, u128::MAX).is_some());
+}
+
+#[test]
+fn a_zero_width_band_switches_on_the_threshold_itself() {
+    let mut band = Hysteresis::new(Thresholds::new(5.0, 5.0).expect("thresholds"));
+    for (value, side) in [
+        (4.999, Band::Low),
+        (5.0, Band::High),
+        (5.001, Band::High),
+        (5.0, Band::High),
+        (4.999, Band::Low),
+        (5.0, Band::High),
+    ] {
+        assert_eq!(band.observe(value), Ok(side), "{value}");
+    }
+    let mut band = Hysteresis::restored(Thresholds::new(7_u8, 7).expect("thresholds"), Band::High);
+    for (value, side) in [
+        (7, Band::High),
+        (6, Band::Low),
+        (7, Band::High),
+        (0, Band::Low),
+    ] {
+        assert_eq!(band.observe(value), Ok(side), "{value}");
+    }
+}
+
+#[test]
+#[allow(clippy::cast_precision_loss)]
+fn integer_bands_compare_exactly_past_f64_precision() {
+    let high = (1_u128 << 53) + 1;
+    assert_eq!(high as f64, (high - 1) as f64, "f64 cannot tell them apart");
+    let mut band = Hysteresis::new(Thresholds::new(high, high).expect("thresholds"));
+    let Ok(below) = band.observe(high - 1);
+    assert_eq!(below, Band::Low);
+    let Ok(at) = band.observe(high);
+    assert_eq!(at, Band::High);
+    let Ok(below) = band.observe(high - 1);
+    assert_eq!(below, Band::Low);
+    let reserve = u128::MAX - 1;
+    let mut band = Hysteresis::new(Thresholds::new(reserve, u128::MAX).expect("thresholds"));
+    assert_eq!(band.observe(u128::MAX), Ok(Band::High));
+    assert_eq!(band.observe(reserve), Ok(Band::Low));
+    let mut band = Hysteresis::new(Thresholds::new(0_u64, u64::MAX).expect("thresholds"));
+    assert_eq!(band.observe(u64::MAX - 1), Ok(Band::Low));
+    assert_eq!(band.observe(u64::MAX), Ok(Band::High));
+    assert_eq!(band.observe(1), Ok(Band::High));
+    assert_eq!(band.observe(0), Ok(Band::Low));
 }
 
 #[test]
@@ -160,11 +223,11 @@ fn a_saved_pid_must_be_finite() {
 
 #[test]
 fn a_saved_band_resumes_on_its_side() {
-    let limits = Limits::new(-2.0, 2.0).expect("limits");
-    let mut live = Hysteresis::new(limits);
-    assert_eq!(Hysteresis::restored(limits, live.state()), live);
+    let thresholds = Thresholds::new(-2.0, 2.0).expect("thresholds");
+    let mut live = Hysteresis::new(thresholds);
+    assert_eq!(Hysteresis::restored(thresholds, live.state()), live);
     assert_eq!(live.observe(3.0), Ok(Band::High));
-    let mut resumed = Hysteresis::restored(live.limits(), live.state());
+    let mut resumed = Hysteresis::restored(live.thresholds(), live.state());
     assert_eq!(resumed, live);
     assert_eq!(resumed.observe(0.0), live.observe(0.0));
     assert_eq!(resumed.state(), Band::High);

@@ -39,6 +39,18 @@ module FeedbackMachines
                 | (min: (Float | Integer), max: (Float | Integer)) -> Limits
   end
 
+  # The core's `Thresholds`. `new` mirrors `Thresholds::new(low, high)`: it
+  # raises RangeError unless both are finite and low <= high, TypeError for
+  # anything but a Float or Integer (a Rational included). Equal thresholds
+  # are a band with no deadband. The fields are stored as Floats. Sealed and
+  # re-checked by the binding like Gains.
+  class Thresholds < Data
+    attr_reader low: Float
+    attr_reader high: Float
+    def self.new: ((Float | Integer) low, (Float | Integer) high) -> Thresholds
+                | (low: (Float | Integer), high: (Float | Integer)) -> Thresholds
+  end
+
   # The core's `Pid`. Sealed: subclassing raises TypeError, no `allocate`.
   class Pid
     # The core's `Pid::new(gains, limits)`. Raises TypeError unless given
@@ -75,16 +87,16 @@ module FeedbackMachines
 
   # The core's `Hysteresis`. Sealed like Pid.
   class Hysteresis
-    # The core's `Hysteresis::new(limits)`: starts :low. Raises TypeError
-    # unless given an instance of exactly Limits, RangeError if its fields
-    # fail the core's constructor.
-    def self.new: (Limits limits) -> Hysteresis
+    # The core's `Hysteresis::new(thresholds)`: starts :low. Raises
+    # TypeError unless given an instance of exactly Thresholds, RangeError if
+    # its fields fail the core's constructor.
+    def self.new: (Thresholds thresholds) -> Hysteresis
 
-    # The core's `Hysteresis::restored(limits, state)`: resumes a band on
-    # `state`. Raises like `new` for the limits, TypeError for a non-Symbol
-    # state, RangeError for a Symbol other than :low or :high.
-    def self.restored: (Limits limits, band state) -> Hysteresis
-    def limits: () -> Limits
+    # The core's `Hysteresis::restored(thresholds, state)`: resumes a band on
+    # `state`. Raises like `new` for the thresholds, TypeError for a
+    # non-Symbol state, RangeError for a Symbol other than :low or :high.
+    def self.restored: (Thresholds thresholds, band state) -> Hysteresis
+    def thresholds: () -> Thresholds
 
     # The side the band is on now. A query.
     def state: () -> band
@@ -130,4 +142,5 @@ module FeedbackMachines
   # fields, converted to Floats.
   private def self.__gains: ((Float | Integer) p, (Float | Integer) i, (Float | Integer) d) -> [Float, Float, Float]
   private def self.__limits: ((Float | Integer) min, (Float | Integer) max) -> [Float, Float]
+  private def self.__thresholds: ((Float | Integer) low, (Float | Integer) high) -> [Float, Float]
 end
