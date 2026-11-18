@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.0](https://github.com/seuros/feedback_machines/compare/feedback-machines-v0.7.0...feedback-machines-v0.8.0) (2026-11-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* exact, zero-width hysteresis bands over Thresholds<T>
+
+### Features
+
+* exact, zero-width hysteresis bands over Thresholds&lt;T&gt; ([baa2b02](https://github.com/seuros/feedback_machines/commit/baa2b0288c1f8a20248acebeb47ee4a92a00e385))
+
 ## [0.7.0](https://github.com/seuros/feedback_machines/compare/feedback-machines-v0.6.0...feedback-machines-v0.7.0) (2026-11-17)
 
 
