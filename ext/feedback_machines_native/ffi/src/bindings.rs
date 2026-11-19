@@ -2,7 +2,8 @@ use feedback_machines::{Band, Dwell, Gains, Hold, Hysteresis, Limits, Pid, Refus
 use magnus::typed_data::Obj;
 use magnus::{Error, IntoValue, RModule, Ruby, Symbol, Value, function, method, prelude::*};
 use matryona_machines::ruby::{
-    Class, Registry, Symbols, boolean, duration, exact_fields, instant, nanoseconds, real,
+    Class, Registry, Symbols, boolean, duration, exact_fields, instant, nanoseconds,
+    optional_instant, real,
 };
 use std::cell::RefCell;
 
@@ -247,11 +248,7 @@ impl DwellTimer {
     /// reader: the dwell can answer a span past `u64` nanoseconds.
     fn restored(ruby: &Ruby, max_gap: Value, held: Value) -> Result<Self, Error> {
         let max_gap = duration(max_gap, "max_gap")?;
-        let held = if held.is_nil() {
-            None
-        } else {
-            Some(instant(held, "held")?)
-        };
+        let held = optional_instant(held, "held")?;
         let message = "a zero max_gap never holds past zero";
         let dwell = Dwell::restored(max_gap, held);
         validated(ruby, dwell, message).map(|dwell| Self(RefCell::new(dwell)))
