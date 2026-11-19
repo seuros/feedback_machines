@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.9.0](https://github.com/seuros/feedback_machines/compare/feedback-machines-v0.8.0...feedback-machines-v0.9.0) (2026-11-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* exact, zero-width hysteresis bands over Thresholds<T>
+* add Pid/Hysteresis restored and seal both controllers
+* build the binding on matryona-machines 0.2; read Gains and Limits from the struct; compiler-checked symbols; ship no test files
+* seal Gains and Limits, re-validate them at the binding, hold no borrow while Limits.new runs
+* converted to the fleet conventions. One exhaustive Refusal per crate, Result from every operation that can refuse, a refusal changes nothing, provable idempotent repeats are honoured, Ruby mirrors the core. No compatibility aliases. step and observe return Result; Ruby takes Gains and Limits values.
+
+### Features
+
+* add Pid/Hysteresis restored and seal both controllers ([c5dc3b7](https://github.com/seuros/feedback_machines/commit/c5dc3b7d97857ccd596562f6364c6918cb63b173))
+* build the binding on matryona-machines 0.2; read Gains and Limits from the struct; compiler-checked symbols; ship no test files ([19023a5](https://github.com/seuros/feedback_machines/commit/19023a591da9a54ecb606eab51a9cc035eccf7a7))
+* Dwell, a condition that must hold continuously for a span ([ca0e3a6](https://github.com/seuros/feedback_machines/commit/ca0e3a63bc8a5e759ff514c67869af2daaa7d737))
+* exact, zero-width hysteresis bands over Thresholds&lt;T&gt; ([baa2b02](https://github.com/seuros/feedback_machines/commit/baa2b0288c1f8a20248acebeb47ee4a92a00e385))
+* initial extraction ([d273a1e](https://github.com/seuros/feedback_machines/commit/d273a1e1a17979e275ded3d02618e316e45d34f3))
+* refuse bad samples with Refusal and take elapsed as Integer nanoseconds in Ruby ([cc23741](https://github.com/seuros/feedback_machines/commit/cc23741e0f1309717910b8752b14e6bbef1dcf13))
+* seal Gains and Limits, re-validate them at the binding, hold no borrow while Limits.new runs ([8aee9ef](https://github.com/seuros/feedback_machines/commit/8aee9efe086af88530c672abd235f92f64d4fb32))
+
+
+### Bug Fixes
+
+* crates.io keywords and categories for the core ([fa5503e](https://github.com/seuros/feedback_machines/commit/fa5503e226b815de6da68bf3710f3b108c27ce2c))
+* keep test sources out of the packaged gem and crate ([d507afd](https://github.com/seuros/feedback_machines/commit/d507afd8ea54ec317a9b3dccbeb0cb4e3d455f6f))
+
 ## [0.8.0](https://github.com/seuros/feedback_machines/compare/feedback-machines-v0.7.0...feedback-machines-v0.8.0) (2026-11-18)
 
 
